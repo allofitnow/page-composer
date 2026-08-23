@@ -1,0 +1,182 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+/*@AOIN-FONTS*/
+:root {
+  --cw: #D9E1EA;
+  --cw80: rgba(217, 225, 234, 0.8);
+  --cw45: rgba(217, 225, 234, 0.45);
+  --cw35: rgba(217, 225, 234, 0.35);
+  --rule: rgba(217, 225, 234, 0.22);
+  --ink: #0A0A0A;
+  --mono: "SN Ja Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Denim INK WD", -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+body { margin: 0; background: #000; color: var(--cw); font-family: var(--sans); font-weight: 400; }
+a { color: var(--cw); text-decoration: none; }
+a:hover { color: var(--cw45); }
+.ov { font-family: var(--mono); font-weight: 300; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--cw45); }
+.m { font-family: var(--mono); font-weight: 300; }
+.g { position: relative; border-radius: 10px; overflow: hidden; background: #101010; }
+.g img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tag { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.72); border: 1px solid rgba(217,225,234,0.35); color: var(--cw); font-family: var(--mono); font-weight: 300; font-size: 9px; letter-spacing: 0.16em; padding: 4px 7px 3px; }
+.leg { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--rule); }
+.legbox { flex: 0 0 auto; height: 15px; border: 1px solid var(--cw45); }
+  </style>
+</helmet>
+<div style="width:1440px;height:1560px;display:flex;flex-direction:column;background:#000;overflow:hidden">
+
+  <div style="height:56px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--rule);background:var(--ink)">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-weight:500;font-size:15px;letter-spacing:0.04em">AOIN</span>
+      <span style="width:1px;height:14px;background:var(--rule)"></span>
+      <span class="ov">Page Composer</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:2px">
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>01</span><span>PICK</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>02</span><span>COMPOSE</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;background:var(--cw);color:#000;font-size:9.5px;letter-spacing:0.2em"><span>03</span><span>PREVIZ</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>04</span><span>COPY</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>05</span><span>EXPORT</span></div>
+    </div>
+  </div>
+
+  <div style="flex:1 1 auto;display:flex;min-height:0">
+
+    <div style="width:290px;flex:0 0 auto;border-right:1px solid var(--rule);background:var(--ink);display:flex;flex-direction:column;padding:26px 24px;gap:26px">
+
+      <div style="display:flex;flex-direction:column;gap:11px">
+        <span class="ov">Panel State</span>
+        <div style="display:flex;gap:4px">
+          <div class="m" style="flex:1 1 auto;text-align:center;font-size:9.5px;letter-spacing:0.14em;padding:7px 0 6px;background:var(--cw);color:#000">COLLAPSED</div>
+          <div class="m" style="flex:1 1 auto;text-align:center;font-size:9.5px;letter-spacing:0.14em;padding:7px 0 6px;border:1px solid var(--rule);color:var(--cw45)">WRITE-UP OPEN</div>
+        </div>
+        <p class="m" style="margin:0;font-size:9.5px;line-height:1.65;letter-spacing:0.06em;color:var(--cw35)">Opening the write-up reflows every block to 49% width and drops the gallery gap from 80px to 24px. Slot spans do not change.</p>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:11px">
+        <span class="ov">Slot Pattern</span>
+        <p class="m" style="margin:0;font-size:9.5px;line-height:1.65;letter-spacing:0.06em;color:var(--cw35)">Position in the carousel decides the slot, and the six-slot pattern repeats — so asset 07 lands back on slot A. Pin a tile from the rail to override its span; a pinned tile keeps that slot wherever it moves.</p>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="background:var(--cw);color:#000;font-family:var(--mono);font-size:8.5px;letter-spacing:0.16em;padding:3px 6px 2px">PINNED</span>
+          <span class="m" style="font-size:9px;letter-spacing:0.1em;color:var(--cw35)">MANUAL OVERRIDE</span>
+        </div>
+        <div style="display:flex;flex-direction:column">
+          <div class="leg"><span class="legbox" style="width:67%"></span><span class="m" style="font-size:9.5px;letter-spacing:0.12em;color:var(--cw80)">A / 8 COL / 16:9</span></div>
+          <div class="leg"><span class="legbox" style="width:33%"></span><span class="m" style="font-size:9.5px;letter-spacing:0.12em;color:var(--cw80)">B / 4 COL / 1:1</span></div>
+          <div class="leg"><span class="legbox" style="width:100%;background:rgba(217,225,234,0.14)"></span><span class="m" style="font-size:9.5px;letter-spacing:0.12em;color:var(--cw80);white-space:nowrap">FULL / 12</span></div>
+          <div class="leg"><span class="legbox" style="width:42%"></span><span class="m" style="font-size:9.5px;letter-spacing:0.12em;color:var(--cw80)">C / 5 COL / 4:3</span></div>
+          <div class="leg"><span class="legbox" style="width:58%"></span><span class="m" style="font-size:9.5px;letter-spacing:0.12em;color:var(--cw80)">D / 7 COL / 16:9</span></div>
+          <div class="leg"><span class="legbox" style="width:100%;background:rgba(217,225,234,0.14)"></span><span class="m" style="font-size:9.5px;letter-spacing:0.12em;color:var(--cw80);white-space:nowrap">FULL / 12</span></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:11px">
+        <span class="ov">Grid</span>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--rule)">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">COLUMNS</span><span class="m" style="font-size:10px">12</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--rule)">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">GAP</span><span class="m" style="font-size:10px">80 PX</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--rule)">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">TILE RADIUS</span><span class="m" style="font-size:10px">10 PX</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--rule)">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">HERO</span><span class="m" style="font-size:10px">95% / 82SVH</span>
+        </div>
+      </div>
+
+      <div style="flex:1 1 auto"></div>
+      <p class="m" style="margin:0;font-size:9px;line-height:1.7;letter-spacing:0.1em;color:var(--cw35);text-transform:uppercase">Unstyled preview. Geometry only, no type or motion.</p>
+    </div>
+
+    <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;align-items:center;padding:34px 0 60px;gap:20px;overflow:hidden">
+
+      <div style="width:800px;display:flex;align-items:flex-end;justify-content:space-between">
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <span class="ov">Layout Previz</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.16em;color:var(--cw35)">/WORK/PESO-DINASTIA</span>
+        </div>
+        <span class="m" style="font-size:9.5px;letter-spacing:0.16em;color:var(--cw45)">6 GALLERY SLOTS / 1 HERO</span>
+      </div>
+
+      <div style="width:800px;border:1px solid var(--rule);padding:22px;display:flex;flex-direction:column;gap:18px;background:#040404">
+
+        <div style="display:flex;align-items:baseline;justify-content:space-between;padding-bottom:4px">
+          <span style="font-weight:500;font-size:26px;letter-spacing:0.02em">PESO DINASTIA</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.2em;color:var(--cw45)">DINASTIA TOUR</span>
+        </div>
+
+        <div class="g" style="height:300px;border-radius:12px">
+          <img src="shot05.jpg" alt="hero">
+          <div class="tag">HERO / 95% W / 82SVH</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:14px;padding:6px 0 2px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">CLIENT</span><span class="m" style="font-size:10px;letter-spacing:0.06em;color:var(--cw80)">LIVE NATION</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">YEAR</span><span class="m" style="font-size:10px;letter-spacing:0.06em;color:var(--cw80)">2026</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">ROLE</span><span class="m" style="font-size:10px;letter-spacing:0.06em;color:var(--cw80)">REAL-TIME CONTENT</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">SCOPE</span><span class="m" style="font-size:10px;letter-spacing:0.06em;color:var(--cw80)">LED / PLAYBACK</span></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(12, minmax(0, 1fr));gap:16px;align-items:start">
+          <div class="g" style="grid-column:1 / span 8;aspect-ratio:16/9">
+            <img src="shot01.jpg" alt="01">
+            <div class="tag">01 / A / 8 COL / 16:9</div>
+          </div>
+          <div class="g" style="grid-column:9 / span 4;align-self:end;aspect-ratio:1/1">
+            <img src="shot07.jpg" alt="02">
+            <div class="tag" data-manual="1">02 / PINNED B / 4 COL / 1:1</div>
+          </div>
+          <div class="g" style="grid-column:1 / -1;height:150px">
+            <img src="shot03.jpg" alt="03">
+            <div class="tag">03 / FULL / 12 COL</div>
+          </div>
+          <div class="g" style="grid-column:1 / span 5;aspect-ratio:4/3">
+            <img src="shot10.jpg" alt="04">
+            <div class="tag">04 / C / 5 COL / 4:3</div>
+          </div>
+          <div class="g" style="grid-column:6 / span 7;align-self:end;aspect-ratio:16/9">
+            <img src="shot06.jpg" alt="05">
+            <div class="tag">05 / D / 7 COL / 16:9</div>
+          </div>
+          <div class="g" style="grid-column:1 / -1;height:150px">
+            <img src="shot12.jpg" alt="06">
+            <div class="tag">06 / FULL / 12 COL</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:14px;padding-top:8px;border-top:1px solid var(--rule)">
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">LED SURFACE</span><span class="m" style="font-size:19px;letter-spacing:0.04em">1,240M2</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">SHOWS</span><span class="m" style="font-size:19px;letter-spacing:0.04em">38</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">CONTENT MIN</span><span class="m" style="font-size:19px;letter-spacing:0.04em">96</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">CITIES</span><span class="m" style="font-size:19px;letter-spacing:0.04em">22</span></div>
+        </div>
+      </div>
+
+      <div style="width:800px;display:flex;justify-content:space-between;align-items:center">
+        <span class="m" style="font-size:9px;letter-spacing:0.16em;color:var(--cw35)">ADD A 7TH ASSET AND IT LANDS BACK ON SLOT A</span>
+        <div class="m" style="background:var(--cw);color:#000;padding:11px 26px 10px;font-size:10.5px;letter-spacing:0.2em;cursor:pointer">CONTINUE TO COPY</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

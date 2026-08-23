@@ -1,0 +1,29 @@
+node_modules/
+.cache/
+server.log
+server.err
+tauri.log
+tauri.err
+design/build/
+src-tauri/target/
+src-tauri/gen/
+
+# --- machine-local, never commit -------------------------------------------
+# config.json holds the Payload address AND, when "remember me on this device"
+# is ticked, the admin password in plain text. config.example.json is the
+# template to copy; the real one stays out of history entirely.
+config.json
+config.json.*
+
+# Build output. The installer is 3.7MB and is rebuilt from source every time.
+*_setup.exe
+*.msi
+*.dmg
+
+.DS_Store
+Thumbs.db
+
+# Editor / tool leftovers.
+*.prelayout
+*.bak
+*.orig

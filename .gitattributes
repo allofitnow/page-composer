@@ -1,0 +1,19 @@
+# This project is edited on Windows and built on macOS, so line endings are
+# normalised in the repository rather than left to each machine's core.autocrlf.
+# Without this, the first commit from a Mac rewrites every file it touches and
+# every diff afterwards is unreadable.
+* text=auto eol=lf
+
+# Binary, so git must never try to normalise or diff them as text.
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
+*.webp binary
+*.mp4 binary
+*.exe binary
+*.docx binary
+
+# Generated and huge; collapse it in diffs so a dependency bump stays reviewable.
+package-lock.json linguist-generated=true -diff
+src-tauri/Cargo.lock linguist-generated=true -diff

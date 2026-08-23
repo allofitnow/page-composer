@@ -1,0 +1,41 @@
+{
+  "roots": [
+    {
+      "label": "z-2026- Projects",
+      "path": "\\\\aoin-nas\\AOIN-NAS\\AOIN Brand and Marketing\\!-Project Assets\\z-2026- Projects"
+    },
+    {
+      "label": "z-2024-Projects",
+      "path": "\\\\aoin-nas\\AOIN-NAS\\AOIN Brand and Marketing\\!-Project Assets\\z-2024-Projects"
+    }
+  ],
+  "port": 4545,
+  "payload": {
+    "url": "http://192.168.30.245",
+    "email": "",
+    "password": ""
+  },
+  "recipe": {
+    "hero": {
+      "maxWidth": 2560,
+      "quality": 82
+    },
+    "thumb": {
+      "width": 1200,
+      "height": 800,
+      "quality": 80
+    },
+    "gallery": {
+      "maxWidth": 2560,
+      "quality": 82
+    },
+    "video": {
+      "maxWidth": 1920,
+      "crf": 23,
+      "preset": "medium",
+      "audio": "128k"
+    }
+  },
+  "ffmpeg": null,
+  "ffprobe": null
+}

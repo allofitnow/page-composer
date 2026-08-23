@@ -1,0 +1,97 @@
+// Exercises the real h() element helper out of web/app.js against a stub DOM.
+//
+// This exists because `draggable: true` silently produced `draggable=""`, which
+// is an *invalid* value for an enumerated attribute and falls back to "not
+// draggable" — so the Page Order rail could not be dragged at all, while the
+// markup still looked right in devtools. Nothing failed loudly; the feature
+// just did nothing. Boolean-style serialisation is correct for `disabled` and
+// friends, so the helper has to tell the two kinds apart.
+import fs from 'node:fs';
+import vm from 'node:vm';
+
+const src = fs.readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
+const a = src.indexOf('function h(tag, props, ...kids) {');
+const b = src.indexOf('// ------------------------------------------------------------------ naming');
+if (a < 0 || b < 0) throw new Error('could not slice h() out of app.js');
+
+class StubNode {
+  constructor(tag) {
+    this.tag = tag;
+    this.className = '';
+    this.attrs = {};
+    this.listeners = [];
+    this.kids = [];
+    this.style = {};
+    this.textContent = undefined;
+  }
+  setAttribute(k, v) {
+    this.attrs[k] = v;
+  }
+  addEventListener(t, fn) {
+    this.listeners.push(t);
+  }
+  append(kid) {
+    this.kids.push(kid);
+  }
+}
+
+const ctx = {
+  console,
+  Node: StubNode,
+  document: {
+    createElement: (t) => new StubNode(t),
+    createTextNode: (s) => new StubNode(`#text:${s}`),
+  },
+};
+vm.createContext(ctx);
+vm.runInContext(src.slice(a, b), ctx);
+const h = vm.runInContext('h', ctx);
+
+let failures = 0;
+const check = (label, got, want) => {
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  if (!ok) failures++;
+  console.log(
+    `${ok ? 'ok  ' : 'FAIL'}  ${label}` +
+      (ok ? '' : `\n        got  ${JSON.stringify(got)}\n        want ${JSON.stringify(want)}`)
+  );
+};
+
+// The regression itself: the rail's tiles are dragged to reorder and to split.
+check('draggable: true serialises to "true"', h('div', { draggable: true }).attrs.draggable, 'true');
+
+// Enumerated attributes generally — the same trap, same fix.
+check('contenteditable: true serialises to "true"', h('div', { contenteditable: true }).attrs.contenteditable, 'true');
+check('spellcheck: true serialises to "true"', h('div', { spellcheck: true }).attrs.spellcheck, 'true');
+check('aria-* true serialises to "true"', h('div', { 'aria-expanded': true }).attrs['aria-expanded'], 'true');
+
+// Genuinely boolean attributes must keep the empty-string form.
+check('disabled: true stays an empty string', h('button', { disabled: true }).attrs.disabled, '');
+check('hidden: true stays an empty string', h('div', { hidden: true }).attrs.hidden, '');
+
+// False must drop the attribute entirely rather than write "false".
+check('draggable: false is omitted', h('div', { draggable: false }).attrs.draggable, undefined);
+
+// An explicit string is passed through untouched — this is how the <img> inside
+// a draggable tile opts out of being its own drag source.
+check('draggable: "false" is written verbatim', h('img', { draggable: 'false' }).attrs.draggable, 'false');
+
+// A <textarea> has no `value` attribute: setting one is silently ignored by the
+// browser, so the box renders empty and typing appears to erase itself on every
+// re-render. Its content has to go in as a text node instead.
+const area = h('textarea', { value: 'typed text' });
+check('textarea value becomes its text content', area.textContent, 'typed text');
+check('textarea value is NOT written as an attribute', area.attrs.value, undefined);
+
+// An <input> does have one, so it must keep using the attribute.
+const input = h('input', { value: 'typed text' });
+check('input value stays an attribute', input.attrs.value, 'typed text');
+check('input gets no stray text content', input.textContent, undefined);
+
+// The rest of the helper's contract, so this file can stand alone as its guard.
+check('tag.class syntax sets className', h('div.cell.m', {}).className, 'cell m');
+check('on* registers a listener, not an attribute', h('div', { onClick: () => {} }).listeners, ['click']);
+check('null and undefined props are skipped', Object.keys(h('div', { a: null, b: undefined }).attrs), []);
+
+console.log(failures ? `\n${failures} FAILED` : '\nall attribute checks passed');
+process.exit(failures ? 1 : 0);

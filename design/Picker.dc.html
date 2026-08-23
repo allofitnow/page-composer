@@ -1,0 +1,194 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+/*@AOIN-FONTS*/
+:root {
+  --cw: #D9E1EA;
+  --cw80: rgba(217, 225, 234, 0.8);
+  --cw45: rgba(217, 225, 234, 0.45);
+  --cw35: rgba(217, 225, 234, 0.35);
+  --rule: rgba(217, 225, 234, 0.22);
+  --ink: #0A0A0A;
+  --mono: "SN Ja Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Denim INK WD", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --brand: cubic-bezier(0.05, 0.89, 0, 0.99);
+}
+body { margin: 0; background: #000; color: var(--cw); font-family: var(--sans); font-weight: 400; }
+a { color: var(--cw); text-decoration: none; }
+a:hover { color: var(--cw45); }
+.ov { font-family: var(--mono); font-weight: 300; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--cw45); }
+.m { font-family: var(--mono); font-weight: 300; }
+.row { display: grid; grid-template-columns: 76px 1fr 62px 62px 84px 108px; gap: 16px; align-items: center; padding: 15px 16px; border-bottom: 1px solid var(--rule); }
+  </style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#000;overflow:hidden">
+
+  <div style="height:56px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--rule);background:var(--ink)">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-weight:500;font-size:15px;letter-spacing:0.04em">AOIN</span>
+      <span style="width:1px;height:14px;background:var(--rule)"></span>
+      <span class="ov">Page Composer</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:2px">
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;background:var(--cw);color:#000;font-size:9.5px;letter-spacing:0.2em"><span>01</span><span>PICK</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>02</span><span>COMPOSE</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>03</span><span>PREVIZ</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>04</span><span>COPY</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>05</span><span>EXPORT</span></div>
+    </div>
+  </div>
+
+  <div style="flex:1 1 auto;display:flex;min-height:0">
+
+    <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;padding:38px 40px 0;gap:26px">
+
+      <div style="display:flex;align-items:flex-end;justify-content:space-between">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <span class="ov">Step 01</span>
+          <h1 style="margin:0;font-weight:500;font-size:46px;line-height:1;letter-spacing:0.01em">Select a project</h1>
+        </div>
+        <div style="display:flex;gap:5px">
+          <div class="m" style="font-size:9.5px;letter-spacing:0.16em;padding:5px 12px 4px;background:var(--cw);color:#000">2026</div>
+          <div class="m" style="font-size:9.5px;letter-spacing:0.16em;padding:5px 12px 4px;border:1px solid var(--rule);color:var(--cw45)">2025</div>
+          <div class="m" style="font-size:9.5px;letter-spacing:0.16em;padding:5px 12px 4px;border:1px solid var(--rule);color:var(--cw45)">2024</div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:11px;border:1px solid var(--rule);padding:11px 14px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(217,225,234,0.45)" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M16.5 16.5L21 21"></path></svg>
+        <span class="m" style="font-size:11px;letter-spacing:0.1em;color:var(--cw)">peso</span>
+        <span style="width:1px;height:13px;background:var(--cw);opacity:0.7"></span>
+        <span style="flex:1 1 auto"></span>
+        <span class="m" style="font-size:9px;letter-spacing:0.16em;color:var(--cw35)">A:\!-PROJECT ASSETS\Z-2026- PROJECTS</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column">
+        <div class="row m" style="padding-bottom:10px;border-bottom:1px solid var(--cw);font-size:9px;letter-spacing:0.22em;color:var(--cw45)">
+          <span>JOB</span><span>PROJECT</span><span>STILLS</span><span>VIDEO</span><span>COPY DOC</span><span>MODIFIED</span>
+        </div>
+
+        <div class="row" style="color:var(--cw35)">
+          <span class="m" style="font-size:11px;letter-spacing:0.12em">26002</span>
+          <span style="font-weight:500;font-size:17px;letter-spacing:0.02em">MARTIN GARRIX</span>
+          <span class="m" style="font-size:11px">148</span>
+          <span class="m" style="font-size:11px">24</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.16em">MISSING</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.12em">12 AUG 2026</span>
+        </div>
+
+        <div class="row" style="color:var(--cw35)">
+          <span class="m" style="font-size:11px;letter-spacing:0.12em">26012</span>
+          <span style="font-weight:500;font-size:17px;letter-spacing:0.02em">MORGAN WALLEN</span>
+          <span class="m" style="font-size:11px">92</span>
+          <span class="m" style="font-size:11px">18</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.16em">MISSING</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.12em">04 AUG 2026</span>
+        </div>
+
+        <div class="row" style="background:var(--cw);color:#000">
+          <span class="m" style="font-size:11px;letter-spacing:0.12em">26013</span>
+          <span style="font-weight:500;font-size:17px;letter-spacing:0.02em">PESO DINASTIA</span>
+          <span class="m" style="font-size:11px">148</span>
+          <span class="m" style="font-size:11px">24</span>
+          <span class="m" style="display:flex;align-items:center;gap:6px;font-size:9.5px;letter-spacing:0.16em">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg>FOUND
+          </span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.12em">12 AUG 2026</span>
+        </div>
+
+        <div class="row" style="color:var(--cw35)">
+          <span class="m" style="font-size:11px;letter-spacing:0.12em">26014</span>
+          <span style="font-weight:500;font-size:17px;letter-spacing:0.02em">RICK ASTLEY</span>
+          <span class="m" style="font-size:11px">0</span>
+          <span class="m" style="font-size:11px">0</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.16em">EMPTY</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.12em">28 JUL 2026</span>
+        </div>
+
+        <div class="row" style="color:var(--cw35)">
+          <span class="m" style="font-size:11px;letter-spacing:0.12em">26024</span>
+          <span style="font-weight:500;font-size:17px;letter-spacing:0.02em">STURDY / THE KID LAROI</span>
+          <span class="m" style="font-size:11px">61</span>
+          <span class="m" style="font-size:11px">9</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.16em">MISSING</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.12em">19 JUL 2026</span>
+        </div>
+
+        <div class="row" style="color:var(--cw35)">
+          <span class="m" style="font-size:11px;letter-spacing:0.12em">26025</span>
+          <span style="font-weight:500;font-size:17px;letter-spacing:0.02em">MM TOUR 26</span>
+          <span class="m" style="font-size:11px">34</span>
+          <span class="m" style="font-size:11px">51</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.16em">MISSING</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.12em">02 JUL 2026</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="width:390px;flex:0 0 auto;border-left:1px solid var(--rule);background:var(--ink);display:flex;flex-direction:column;padding:38px 30px;gap:22px">
+      <span class="ov">Preview</span>
+
+      <div style="border-radius:12px;overflow:hidden;aspect-ratio:16/9;background:#111">
+        <img src="shot05.jpg" alt="Peso Dinastia" style="width:100%;height:100%;object-fit:cover;display:block">
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <h2 style="margin:0;font-weight:500;font-size:30px;line-height:1;letter-spacing:0.02em">PESO DINASTIA</h2>
+        <span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw35)">26013_PESO-DINASTIA</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;border-top:1px solid var(--rule)">
+        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--rule)">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.18em;color:var(--cw45)">01_PHOTOS</span>
+          <span class="m" style="font-size:10px;letter-spacing:0.1em">148</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--rule)">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.18em;color:var(--cw45)">02_VIDEOS</span>
+          <span class="m" style="font-size:10px;letter-spacing:0.1em">24</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--rule)">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.18em;color:var(--cw45)">03_GIFS</span>
+          <span class="m" style="font-size:10px;letter-spacing:0.1em">6</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--rule)">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.18em;color:var(--cw45)">04_INSTAGRAM</span>
+          <span class="m" style="font-size:10px;letter-spacing:0.1em">31</span>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:11px">
+        <span class="ov">Status</span>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.16em;color:var(--cw45)">COPY DOC</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.12em;color:var(--cw)">PESO-DINASTIA_WRITEUP.DOCX</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.16em;color:var(--cw45)">ON STAGING</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.16em;color:var(--cw35)">NOT PUBLISHED</span>
+        </div>
+      </div>
+
+      <div style="flex:1 1 auto"></div>
+
+      <div class="m" style="background:var(--cw);color:#000;text-align:center;padding:14px 0 13px;font-size:11px;letter-spacing:0.22em;cursor:pointer">OPEN IN COMPOSER</div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

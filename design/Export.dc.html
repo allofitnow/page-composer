@@ -1,0 +1,218 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+/*@AOIN-FONTS*/
+:root {
+  --cw: #D9E1EA;
+  --cw80: rgba(217, 225, 234, 0.8);
+  --cw45: rgba(217, 225, 234, 0.45);
+  --cw35: rgba(217, 225, 234, 0.35);
+  --rule: rgba(217, 225, 234, 0.22);
+  --ink: #0A0A0A;
+  --mono: "SN Ja Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Denim INK WD", -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+body { margin: 0; background: #000; color: var(--cw); font-family: var(--sans); font-weight: 400; }
+a { color: var(--cw); text-decoration: none; }
+a:hover { color: var(--cw45); }
+.ov { font-family: var(--mono); font-weight: 300; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--cw45); }
+.m { font-family: var(--mono); font-weight: 300; }
+.r { display: grid; grid-template-columns: 30px 1fr 14px 1fr 58px 96px 78px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--rule); font-family: var(--mono); font-weight: 300; font-size: 10px; letter-spacing: 0.03em; }
+.tr { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  </style>
+</helmet>
+<div style="width:1440px;height:980px;display:flex;flex-direction:column;background:#000;overflow:hidden">
+
+  <div style="height:56px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--rule);background:var(--ink)">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-weight:500;font-size:15px;letter-spacing:0.04em">AOIN</span>
+      <span style="width:1px;height:14px;background:var(--rule)"></span>
+      <span class="ov">Page Composer</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:2px">
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>01</span><span>PICK</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>02</span><span>COMPOSE</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>03</span><span>PREVIZ</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>04</span><span>COPY</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;background:var(--cw);color:#000;font-size:9.5px;letter-spacing:0.2em"><span>05</span><span>EXPORT</span></div>
+    </div>
+  </div>
+
+  <div style="flex:1 1 auto;display:flex;min-height:0">
+
+    <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;padding:32px 36px;gap:22px">
+
+      <div style="display:flex;align-items:flex-end;justify-content:space-between">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <span class="ov">Step 05</span>
+          <h1 style="margin:0;font-weight:500;font-size:40px;line-height:1;letter-spacing:0.01em">Compose</h1>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px;align-items:flex-end">
+          <span class="m" style="font-size:9px;letter-spacing:0.2em;color:var(--cw35)">WRITING INTO</span>
+          <span class="m" style="font-size:10px;letter-spacing:0.06em;color:var(--cw80)">26013_PESO-DINASTIA\</span>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="height:3px;background:rgba(217,225,234,0.14);position:relative">
+          <div style="position:absolute;inset:0 38% 0 0;background:var(--cw)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="m" style="font-size:9.5px;letter-spacing:0.18em;color:var(--cw)">CONVERTING 5 OF 8</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.18em;color:var(--cw35)">184.2 MB &rarr; 4.6 MB</span>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column">
+        <div class="r" style="border-bottom:1px solid var(--cw);padding-bottom:8px;font-size:8.5px;letter-spacing:0.22em;color:var(--cw45)">
+          <span></span><span>SOURCE</span><span></span><span>OUTPUT</span><span>TYPE</span><span>SIZE</span><span>STATUS</span>
+        </div>
+
+        <div class="r">
+          <span style="color:var(--cw35)">H</span>
+          <span class="tr" style="color:var(--cw45)">garrettbruce-1967.jpg</span>
+          <span style="color:var(--cw35)">&rarr;</span>
+          <span class="tr">peso-dinastia-dinastia-tour_hero.webp</span>
+          <span style="color:var(--cw45)">WEBP</span>
+          <span style="color:var(--cw45)">22.4 &rarr; 0.6 MB</span>
+          <span style="display:flex;align-items:center;gap:6px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg>DONE</span>
+        </div>
+
+        <div class="r">
+          <span style="color:var(--cw35)">T</span>
+          <span class="tr" style="color:var(--cw45)">garrettbruce-1401.jpg</span>
+          <span style="color:var(--cw35)">&rarr;</span>
+          <span class="tr">peso-dinastia-dinastia-tour_thumb.webp</span>
+          <span style="color:var(--cw45)">WEBP</span>
+          <span style="color:var(--cw45)">18.9 &rarr; 0.2 MB</span>
+          <span style="display:flex;align-items:center;gap:6px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg>DONE</span>
+        </div>
+
+        <div class="r">
+          <span style="color:var(--cw35)">01</span>
+          <span class="tr" style="color:var(--cw45)">DSC03502.jpg</span>
+          <span style="color:var(--cw35)">&rarr;</span>
+          <span class="tr">peso-dinastia-dinastia-tour_gallery01.webp</span>
+          <span style="color:var(--cw45)">WEBP</span>
+          <span style="color:var(--cw45)">21.7 &rarr; 0.5 MB</span>
+          <span style="display:flex;align-items:center;gap:6px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg>DONE</span>
+        </div>
+
+        <div class="r">
+          <span style="color:var(--cw35)">02</span>
+          <span class="tr" style="color:var(--cw45)">garrettbruce-2218.jpg</span>
+          <span style="color:var(--cw35)">&rarr;</span>
+          <span class="tr">peso-dinastia-dinastia-tour_gallery02.webp</span>
+          <span style="color:var(--cw45)">WEBP</span>
+          <span style="color:var(--cw45)">19.2 &rarr; 0.4 MB</span>
+          <span style="display:flex;align-items:center;gap:6px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg>DONE</span>
+        </div>
+
+        <div class="r">
+          <span style="color:var(--cw35)">03</span>
+          <span class="tr" style="color:var(--cw45)">garrettbruce-1534.jpg</span>
+          <span style="color:var(--cw35)">&rarr;</span>
+          <span class="tr">peso-dinastia-dinastia-tour_gallery03.webp</span>
+          <span style="color:var(--cw45)">WEBP</span>
+          <span style="color:var(--cw45)">20.1 &rarr; 0.5 MB</span>
+          <span style="display:flex;align-items:center;gap:6px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg>DONE</span>
+        </div>
+
+        <div class="r" style="color:var(--cw)">
+          <span style="color:var(--cw35)">04</span>
+          <span class="tr" style="color:var(--cw45)">APAGA LUX_prob4.mov</span>
+          <span style="color:var(--cw35)">&rarr;</span>
+          <span class="tr">peso-dinastia-dinastia-tour_gallery04.mp4</span>
+          <span>MP4</span>
+          <span style="display:flex;align-items:center;gap:8px">
+            <span style="flex:1 1 auto;height:2px;background:rgba(217,225,234,0.16);position:relative"><span style="position:absolute;inset:0 44% 0 0;background:var(--cw)"></span></span>
+          </span>
+          <span>H264 56%</span>
+        </div>
+
+        <div class="r" style="color:var(--cw35)">
+          <span>05</span>
+          <span class="tr">garrettbruce-1997.jpg</span>
+          <span>&rarr;</span>
+          <span class="tr">peso-dinastia-dinastia-tour_gallery05.webp</span>
+          <span>WEBP</span>
+          <span>&mdash;</span>
+          <span>QUEUED</span>
+        </div>
+
+        <div class="r" style="color:var(--cw35)">
+          <span>06</span>
+          <span class="tr">garrettbruce-3418.jpg</span>
+          <span>&rarr;</span>
+          <span class="tr">peso-dinastia-dinastia-tour_gallery06.webp</span>
+          <span>WEBP</span>
+          <span>&mdash;</span>
+          <span>QUEUED</span>
+        </div>
+      </div>
+
+      <div style="flex:1 1 auto"></div>
+
+      <div style="border-top:1px solid var(--rule);padding-top:14px;display:flex;flex-direction:column;gap:5px">
+        <span class="m" style="font-size:9px;letter-spacing:0.1em;color:var(--cw35)">14:22:07 &nbsp; RESOLVED FFMPEG &mdash; CHOCOLATEY\LIB\FFMPEG-FULL\TOOLS\FFMPEG\BIN</span>
+        <span class="m" style="font-size:9px;letter-spacing:0.1em;color:var(--cw35)">14:22:07 &nbsp; WROTE _COMPOSE-MANIFEST.JSON &mdash; 8 MAPPINGS, ORIGINALS UNTOUCHED</span>
+        <span class="m" style="font-size:9px;letter-spacing:0.1em;color:var(--cw80)">14:22:19 &nbsp; GALLERY04 &mdash; TRANSCODING 3840x2160 PRORES TO 1920 H264</span>
+      </div>
+    </div>
+
+    <div style="width:370px;flex:0 0 auto;border-left:1px solid var(--rule);background:var(--ink);display:flex;flex-direction:column;padding:32px 28px;gap:24px">
+
+      <div style="display:flex;flex-direction:column;gap:13px">
+        <span class="ov">Summary</span>
+        <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:18px">
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">ASSETS</span><span class="m" style="font-size:26px;letter-spacing:0.04em">8</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">SAVED</span><span class="m" style="font-size:26px;letter-spacing:0.04em">97%</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">STILLS</span><span class="m" style="font-size:26px;letter-spacing:0.04em">7</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span class="m" style="font-size:8px;letter-spacing:0.22em;color:var(--cw35)">VIDEO</span><span class="m" style="font-size:26px;letter-spacing:0.04em">1</span></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:11px;padding-top:20px;border-top:1px solid var(--rule)">
+        <span class="ov">Recipe</span>
+        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--rule)"><span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">STILLS</span><span class="m" style="font-size:9.5px;letter-spacing:0.06em">WEBP Q82 / 2560 MAX</span></div>
+        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--rule)"><span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">THUMB</span><span class="m" style="font-size:9.5px;letter-spacing:0.06em">WEBP Q80 / 1200x800</span></div>
+        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--rule)"><span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">VIDEO</span><span class="m" style="font-size:9.5px;letter-spacing:0.06em">H264 CRF23 / 1920</span></div>
+        <div style="display:flex;justify-content:space-between;padding:7px 0"><span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">ORIGINALS</span><span class="m" style="font-size:9.5px;letter-spacing:0.06em">KEPT</span></div>
+      </div>
+
+      <div style="flex:1 1 auto"></div>
+
+      <div style="display:flex;flex-direction:column;gap:14px;padding-top:22px;border-top:1px solid var(--cw);opacity:0.45">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span class="ov" style="color:var(--cw80)">Publish</span>
+          <span class="m" style="font-size:8.5px;letter-spacing:0.18em;color:var(--cw35)">LOCKED UNTIL COMPOSE ENDS</span>
+        </div>
+        <div style="display:flex;justify-content:space-between"><span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">TARGET</span><span class="m" style="font-size:9.5px">192.168.30.245</span></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:9px"><span style="width:6px;height:6px;background:var(--cw35)"></span><span class="m" style="font-size:9.5px;letter-spacing:0.12em;color:var(--cw45)">UPLOAD 8 MEDIA DOCS</span></div>
+          <div style="display:flex;align-items:center;gap:9px"><span style="width:6px;height:6px;background:var(--cw35)"></span><span class="m" style="font-size:9.5px;letter-spacing:0.12em;color:var(--cw45)">CREATE PROJECT / PESO-DINASTIA</span></div>
+          <div style="display:flex;align-items:center;gap:9px"><span style="width:6px;height:6px;background:var(--cw35)"></span><span class="m" style="font-size:9.5px;letter-spacing:0.12em;color:var(--cw45)">TRIGGER ASTRO REBUILD</span></div>
+        </div>
+        <div class="m" style="border:1px solid var(--cw45);color:var(--cw45);text-align:center;padding:13px 0 12px;font-size:10.5px;letter-spacing:0.2em">PUBLISH TO STAGING</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

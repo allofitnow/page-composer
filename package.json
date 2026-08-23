@@ -1,0 +1,21 @@
+{
+  "name": "page-composer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AOIN project page composer — bridges asset folders + copy docs into a Payload-ready portfolio page.",
+  "scripts": {
+    "start": "node server/index.js",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "mammoth": "^1.12.1",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
+  }
+}

@@ -1,0 +1,477 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+/*@AOIN-FONTS*/
+:root {
+  --cw: #D9E1EA;
+  --cw80: rgba(217, 225, 234, 0.8);
+  --cw45: rgba(217, 225, 234, 0.45);
+  --cw35: rgba(217, 225, 234, 0.35);
+  --rule: rgba(217, 225, 234, 0.22);
+  --ink: #0A0A0A;
+  --mono: "SN Ja Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Denim INK WD", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --brand: cubic-bezier(0.05, 0.89, 0, 0.99);
+}
+body { margin: 0; background: #000; color: var(--cw); font-family: var(--sans); font-weight: 400; }
+a { color: var(--cw); text-decoration: none; }
+a:hover { color: var(--cw45); }
+  </style>
+</helmet>
+<div style="width:1440px;height:980px;display:flex;flex-direction:column;background:#000;overflow:hidden">
+
+  <div style="height:56px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--rule);background:var(--ink)">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-family:var(--sans);font-weight:500;font-size:15px;letter-spacing:0.04em">AOIN</span>
+      <span style="width:1px;height:14px;background:var(--rule)"></span>
+      <span style="font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:var(--cw45)">Page Composer</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px;color:var(--cw80)">
+      <span style="display:flex;color:var(--cw45)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></span>
+      <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.14em">26013_PESO-DINASTIA</span>
+      <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.16em;color:var(--cw35)">Z-2026 PROJECTS</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:2px">
+      <div style="display:flex;align-items:center;gap:7px;padding:4px 9px 3px;background:transparent;color:var(--cw35);font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.2em"><span>01</span><span>PICK</span></div>
+      <div style="display:flex;align-items:center;gap:7px;padding:4px 9px 3px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.2em"><span>02</span><span>COMPOSE</span></div>
+      <div style="display:flex;align-items:center;gap:7px;padding:4px 9px 3px;background:transparent;color:var(--cw35);font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.2em"><span>03</span><span>PREVIZ</span></div>
+      <div style="display:flex;align-items:center;gap:7px;padding:4px 9px 3px;background:transparent;color:var(--cw35);font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.2em"><span>04</span><span>COPY</span></div>
+      <div style="display:flex;align-items:center;gap:7px;padding:4px 9px 3px;background:transparent;color:var(--cw35);font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.2em"><span>05</span><span>EXPORT</span></div>
+    </div>
+  </div>
+
+  <div style="flex:1 1 auto;display:flex;min-height:0">
+
+    <div style="width:240px;flex:0 0 auto;border-right:1px solid var(--rule);background:var(--ink);display:flex;flex-direction:column;padding:20px 18px;gap:16px">
+      <div style="font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:var(--cw45)">Source</div>
+      <div style="display:flex;gap:5px">
+        <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.16em;padding:4px 9px 3px;background:var(--cw);color:#000">ALL</div>
+        <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.16em;padding:4px 9px 3px;border:1px solid var(--rule);color:var(--cw45)">STILLS</div>
+        <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.16em;padding:4px 9px 3px;border:1px solid var(--rule);color:var(--cw45)">VIDEO</div>
+      </div>
+      <div style="display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0 6px 0px;color:var(--cw)">
+          <span style="display:flex;flex:0 0 auto"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg></span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:10.5px;letter-spacing:0.06em;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">01_PHOTOS</span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.1em;color:var(--cw35)">148</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0 6px 16px;color:var(--cw)">
+          <span style="display:flex;flex:0 0 auto"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16"></rect><path d="M3 16l5-5 4 4 3-3 6 6"></path></svg></span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:10.5px;letter-spacing:0.06em;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">J SELECTS</span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.1em;color:var(--cw35)">17</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0 6px 16px;color:var(--cw45)">
+          <span style="display:flex;flex:0 0 auto"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16"></rect><path d="M3 16l5-5 4 4 3-3 6 6"></path></svg></span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:10.5px;letter-spacing:0.06em;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">RENDER SCREENSHOTS</span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.1em;color:var(--cw35)">44</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0 6px 16px;color:var(--cw45)">
+          <span style="display:flex;flex:0 0 auto"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16"></rect><path d="M3 16l5-5 4 4 3-3 6 6"></path></svg></span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:10.5px;letter-spacing:0.06em;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">SHOW PHOTOS</span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.1em;color:var(--cw35)">87</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0 6px 0px;color:var(--cw45)">
+          <span style="display:flex;flex:0 0 auto"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg></span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:10.5px;letter-spacing:0.06em;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">02_VIDEOS</span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.1em;color:var(--cw35)">24</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0 6px 0px;color:var(--cw45)">
+          <span style="display:flex;flex:0 0 auto"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg></span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:10.5px;letter-spacing:0.06em;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">03_GIFS</span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.1em;color:var(--cw35)">6</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0 6px 0px;color:var(--cw45)">
+          <span style="display:flex;flex:0 0 auto"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg></span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:10.5px;letter-spacing:0.06em;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">04_INSTAGRAM</span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.1em;color:var(--cw35)">31</span>
+        </div>
+      </div>
+      <div style="flex:1 1 auto"></div>
+      <div style="border-top:1px solid var(--rule);padding-top:14px;display:flex;flex-direction:column;gap:9px">
+        <div style="font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:var(--cw45)">Copy Doc</div>
+        <div style="display:flex;align-items:center;gap:8px;color:var(--cw)">
+          <span style="display:flex;color:var(--cw45)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg></span>
+          <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">PESO-DINASTIA_WRITEUP.DOCX</span>
+          <span style="display:flex"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg></span>
+        </div>
+        <div style="font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.12em;color:var(--cw35)">14 / 14 FIELDS MAPPED</div>
+      </div>
+    </div>
+
+    <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;padding:20px 24px;gap:14px">
+      <div style="display:flex;align-items:flex-end;justify-content:space-between">
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div style="font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:var(--cw45)">Contact Sheet</div>
+          <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.16em;color:var(--cw35)">{{ hint }}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <span style="font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;color:var(--cw45)">{{ selLine }}</span>
+          <div style="display:flex;gap:4px">
+            <div onClick="{{ mGallery.set }}" style="cursor:pointer;font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.16em;padding:5px 11px 4px;background:{{ mGallery.bg }};color:{{ mGallery.fg }};border:1px solid {{ mGallery.bd }}">GALLERY</div>
+            <div onClick="{{ mHero.set }}" style="cursor:pointer;font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.16em;padding:5px 11px 4px;background:{{ mHero.bg }};color:{{ mHero.fg }};border:1px solid {{ mHero.bd }}">HERO</div>
+            <div onClick="{{ mThumb.set }}" style="cursor:pointer;font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.16em;padding:5px 11px 4px;background:{{ mThumb.bg }};color:{{ mThumb.fg }};border:1px solid {{ mThumb.bd }}">THUMB</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:10px">
+        <div onClick="{{ t1.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t1.ring }};outline-offset:-2px;opacity:{{ t1.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot01.jpg" alt="DSC03502.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t1.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t1.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">DSC03502.JPG</div>
+        </div>
+        <div onClick="{{ t2.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t2.ring }};outline-offset:-2px;opacity:{{ t2.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot02.jpg" alt="GARRETTBRUCE-1401.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t2.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t2.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-1401.JPG</div>
+        </div>
+        <div onClick="{{ t3.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t3.ring }};outline-offset:-2px;opacity:{{ t3.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot03.jpg" alt="GARRETTBRUCE-1534.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t3.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t3.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-1534.JPG</div>
+        </div>
+        <div onClick="{{ t4.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t4.ring }};outline-offset:-2px;opacity:{{ t4.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot04.jpg" alt="GARRETTBRUCE-1910.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t4.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t4.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-1910.JPG</div>
+        </div>
+        <div onClick="{{ t5.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t5.ring }};outline-offset:-2px;opacity:{{ t5.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot05.jpg" alt="GARRETTBRUCE-1967.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t5.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t5.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-1967.JPG</div>
+        </div>
+        <div onClick="{{ t6.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t6.ring }};outline-offset:-2px;opacity:{{ t6.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot06.jpg" alt="GARRETTBRUCE-1997.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t6.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t6.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-1997.JPG</div>
+        </div>
+        <div onClick="{{ t7.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t7.ring }};outline-offset:-2px;opacity:{{ t7.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot07.jpg" alt="GARRETTBRUCE-2218.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t7.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t7.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-2218.JPG</div>
+        </div>
+        <div onClick="{{ t8.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t8.ring }};outline-offset:-2px;opacity:{{ t8.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot08.jpg" alt="GARRETTBRUCE-3228.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t8.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t8.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-3228.JPG</div>
+        </div>
+        <div onClick="{{ t9.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t9.ring }};outline-offset:-2px;opacity:{{ t9.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot09.jpg" alt="GARRETTBRUCE-3231.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t9.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t9.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-3231.JPG</div>
+        </div>
+        <div onClick="{{ t10.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t10.ring }};outline-offset:-2px;opacity:{{ t10.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot10.jpg" alt="GARRETTBRUCE-3347.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t10.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t10.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-3347.JPG</div>
+        </div>
+        <div onClick="{{ t11.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t11.ring }};outline-offset:-2px;opacity:{{ t11.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot11.jpg" alt="GARRETTBRUCE-3392.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t11.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t11.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-3392.JPG</div>
+        </div>
+        <div onClick="{{ t12.pick }}" style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/2;cursor:pointer;background:#0d0d0d;outline:{{ t12.ring }};outline-offset:-2px;opacity:{{ t12.dim }};transition:opacity 180ms var(--brand)">
+          <img src="shot12.jpg" alt="GARRETTBRUCE-3418.JPG" style="width:100%;height:100%;object-fit:cover;display:block">
+          <sc-if value="{{ t12.on }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:9px;left:9px;background:var(--cw);color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">{{ t12.label }}</div>
+          </sc-if>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:14px 9px 6px;background:linear-gradient(to top,rgba(0,0,0,0.9),rgba(0,0,0,0));font-family:var(--mono);font-weight:300;font-size:9px;letter-spacing:0.1em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GARRETTBRUCE-3418.JPG</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="width:320px;flex:0 0 auto;border-left:1px solid var(--rule);background:var(--ink);display:flex;flex-direction:column;padding:20px 18px;gap:14px;min-height:0">
+      <div style="font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:var(--cw45)">Page Order</div>
+
+      <div style="display:flex;flex-direction:column;gap:7px">
+        <div style="position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#111;outline:2px solid #FFFFFF;outline-offset:-2px">
+          <sc-if value="{{ h1 }}" hint-placeholder-val="{{ false }}"><img src="shot01.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h2 }}" hint-placeholder-val="{{ false }}"><img src="shot02.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h3 }}" hint-placeholder-val="{{ false }}"><img src="shot03.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h4 }}" hint-placeholder-val="{{ false }}"><img src="shot04.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h5 }}" hint-placeholder-val="{{ true }}"><img src="shot05.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h6 }}" hint-placeholder-val="{{ false }}"><img src="shot06.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h7 }}" hint-placeholder-val="{{ false }}"><img src="shot07.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h8 }}" hint-placeholder-val="{{ false }}"><img src="shot08.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h9 }}" hint-placeholder-val="{{ false }}"><img src="shot09.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h10 }}" hint-placeholder-val="{{ false }}"><img src="shot10.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h11 }}" hint-placeholder-val="{{ false }}"><img src="shot11.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <sc-if value="{{ h12 }}" hint-placeholder-val="{{ false }}"><img src="shot12.jpg" alt="hero" style="width:100%;height:100%;object-fit:cover;display:block"></sc-if>
+          <div style="position:absolute;top:9px;left:9px;background:#FFFFFF;color:#000;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.16em;padding:4px 7px 3px">HERO</div>
+        </div>
+        <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80)">{{ heroOut }}</div>
+        <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.14em;color:var(--cw35)">FROM {{ heroName }}</div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)">
+        <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.16em;color:var(--cw45)">THUMB</span>
+        <span style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ thumbOut }}</span>
+      </div>
+
+      <div style="display:flex;align-items:baseline;justify-content:space-between">
+        <div style="font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:var(--cw45)">Gallery</div>
+        <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.16em;color:var(--cw35)">{{ count }} IN CAROUSEL</div>
+      </div>
+
+      <div style="flex:1 1 auto;overflow-y:auto;min-height:0;display:flex;flex-direction:column">
+          <sc-if value="{{ r1.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r1.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r1.num }}</span>
+              <img src="shot01.jpg" alt="DSC03502.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r1.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r1.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r2.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r2.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r2.num }}</span>
+              <img src="shot02.jpg" alt="GARRETTBRUCE-1401.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r2.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r2.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r3.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r3.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r3.num }}</span>
+              <img src="shot03.jpg" alt="GARRETTBRUCE-1534.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r3.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r3.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r4.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r4.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r4.num }}</span>
+              <img src="shot04.jpg" alt="GARRETTBRUCE-1910.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r4.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r4.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r5.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r5.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r5.num }}</span>
+              <img src="shot05.jpg" alt="GARRETTBRUCE-1967.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r5.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r5.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r6.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r6.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r6.num }}</span>
+              <img src="shot06.jpg" alt="GARRETTBRUCE-1997.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r6.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r6.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r7.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r7.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r7.num }}</span>
+              <img src="shot07.jpg" alt="GARRETTBRUCE-2218.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r7.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r7.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r8.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r8.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r8.num }}</span>
+              <img src="shot08.jpg" alt="GARRETTBRUCE-3228.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r8.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r8.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r9.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r9.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r9.num }}</span>
+              <img src="shot09.jpg" alt="GARRETTBRUCE-3231.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r9.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r9.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r10.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r10.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r10.num }}</span>
+              <img src="shot10.jpg" alt="GARRETTBRUCE-3347.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r10.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r10.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r11.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r11.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r11.num }}</span>
+              <img src="shot11.jpg" alt="GARRETTBRUCE-3392.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r11.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r11.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r12.on }}" hint-placeholder-val="{{ true }}">
+            <div style="order:{{ r12.ord }};display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)">
+              <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"></path></svg></span>
+              <span style="font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.1em;color:var(--cw);width:18px">{{ r12.num }}</span>
+              <img src="shot12.jpg" alt="GARRETTBRUCE-3418.JPG" style="width:52px;height:35px;object-fit:cover;border-radius:3px;display:block;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto">
+                <div style="font-family:var(--mono);font-weight:300;font-size:9.5px;letter-spacing:0.04em;color:var(--cw80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r12.out }}</div>
+                <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.16em;color:var(--cw35)">{{ r12.slot }}</div>
+              </div>
+            </div>
+          </sc-if>
+      </div>
+
+      <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:9px;padding-top:12px;border-top:1px solid var(--rule)">
+        <div style="font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:var(--cw45)">Name Base</div>
+        <div style="border:1px solid var(--rule);padding:8px 10px;font-family:var(--mono);font-weight:300;font-size:10px;letter-spacing:0.04em;color:var(--cw)">{{ base }}</div>
+        <div style="font-family:var(--mono);font-weight:300;font-size:8.5px;letter-spacing:0.1em;color:var(--cw35);text-transform:uppercase">project-name-tour_description##</div>
+        <div style="background:var(--cw);color:#000;text-align:center;padding:12px 0 11px;font-family:var(--mono);font-weight:300;font-size:11px;letter-spacing:0.2em;cursor:pointer">{{ composeLabel }}</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"base":{"editor":"text","default":"peso-dinastia-dinastia-tour","section":"Naming"}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { hero: 4, thumb: 1, gallery: [0, 6, 2, 9, 5, 11], mode: 'gallery' };
+  }
+
+  slotOf(p) {
+    return ['A / 8 COL / 16:9', 'B / 4 COL / 1:1', 'FULL / 12 COL', 'C / 5 COL / 4:3', 'D / 7 COL / 16:9', 'FULL / 12 COL'][p % 6];
+  }
+
+  pick(i) {
+    const s = this.state;
+    if (s.mode === 'hero') {
+      this.setState({ hero: i, gallery: s.gallery.filter((g) => g !== i), thumb: s.thumb === i ? null : s.thumb });
+      return;
+    }
+    if (s.mode === 'thumb') {
+      this.setState({ thumb: i, gallery: s.gallery.filter((g) => g !== i), hero: s.hero === i ? null : s.hero });
+      return;
+    }
+    if (s.gallery.indexOf(i) >= 0) {
+      this.setState({ gallery: s.gallery.filter((g) => g !== i) });
+    } else {
+      this.setState({ gallery: s.gallery.concat([i]), hero: s.hero === i ? null : s.hero, thumb: s.thumb === i ? null : s.thumb });
+    }
+  }
+
+  renderVals() {
+    const s = this.state;
+    const names = ["DSC03502.JPG","GARRETTBRUCE-1401.JPG","GARRETTBRUCE-1534.JPG","GARRETTBRUCE-1910.JPG","GARRETTBRUCE-1967.JPG","GARRETTBRUCE-1997.JPG","GARRETTBRUCE-2218.JPG","GARRETTBRUCE-3228.JPG","GARRETTBRUCE-3231.JPG","GARRETTBRUCE-3347.JPG","GARRETTBRUCE-3392.JPG","GARRETTBRUCE-3418.JPG"];
+    const base = this.props.base ?? 'peso-dinastia-dinastia-tour';
+    const pad = (n) => (n < 10 ? '0' + n : String(n));
+    const v = {};
+
+    for (let i = 0; i < names.length; i++) {
+      const g = s.gallery.indexOf(i);
+      const isHero = s.hero === i;
+      const isThumb = s.thumb === i;
+      const on = isHero || isThumb || g >= 0;
+      v['t' + (i + 1)] = {
+        on: on,
+        label: isHero ? 'HERO' : isThumb ? 'THUMB' : pad(g + 1),
+        ring: on ? '2px solid ' + (isHero ? '#FFFFFF' : '#D9E1EA') : '0px solid transparent',
+        dim: on ? 1 : 0.4,
+        pick: () => this.pick(i),
+      };
+      v['h' + (i + 1)] = isHero;
+      v['r' + (i + 1)] = {
+        on: g >= 0,
+        ord: g,
+        num: pad(g + 1),
+        out: base + '_gallery' + pad(g + 1) + '.webp',
+        slot: this.slotOf(g),
+      };
+    }
+
+    v.heroName = s.hero == null ? 'NOT SET' : names[s.hero];
+    v.heroOut = base + '_hero.webp';
+    v.thumbName = s.thumb == null ? 'NOT SET' : names[s.thumb];
+    v.thumbOut = base + '_thumb.webp';
+    v.base = base;
+    v.count = s.gallery.length;
+    v.total = s.gallery.length + (s.hero == null ? 0 : 1) + (s.thumb == null ? 0 : 1);
+    v.composeLabel = 'COMPOSE ' + v.total + ' ASSETS';
+    v.selLine = '148 ASSETS / ' + v.total + ' SELECTED';
+
+    const chip = (m) => ({
+      bg: s.mode === m ? '#D9E1EA' : 'transparent',
+      fg: s.mode === m ? '#000000' : 'rgba(217,225,234,0.45)',
+      bd: s.mode === m ? '#D9E1EA' : 'rgba(217,225,234,0.22)',
+      set: () => this.setState({ mode: m }),
+    });
+    v.mGallery = chip('gallery');
+    v.mHero = chip('hero');
+    v.mThumb = chip('thumb');
+    v.hint =
+      s.mode === 'gallery'
+        ? 'CLICK TO ADD OR REMOVE FROM THE CAROUSEL'
+        : s.mode === 'hero'
+        ? 'CLICK A TILE TO SET THE HERO'
+        : 'CLICK A TILE TO SET THE THUMB';
+    return v;
+  }
+}
+</script>
+</body>
+</html>

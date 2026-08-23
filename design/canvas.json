@@ -1,0 +1,41 @@
+{
+  "artboards": [
+    { "file": "Picker.dc.html", "title": "01 / PICK PROJECT", "x": 0, "y": 0, "w": 1440, "h": 900 },
+    { "file": "Main.dc.html", "title": "02 / COMPOSE", "x": 1540, "y": 0, "w": 1440, "h": 980 },
+    { "file": "Previz.dc.html", "title": "03 / LAYOUT PREVIZ", "x": 3080, "y": 0, "w": 1440, "h": 1560 },
+    { "file": "Copy.dc.html", "title": "04 / COPY", "x": 0, "y": 1120, "w": 1440, "h": 1160 },
+    { "file": "Export.dc.html", "title": "05 / COMPOSE + PUBLISH", "x": 1540, "y": 1120, "w": 1440, "h": 980 },
+    { "file": "Roots.dc.html", "title": "SETTINGS / ASSET ROOTS", "x": 3080, "y": 1700, "w": 1440, "h": 900 }
+  ],
+  "annotations": [
+    {
+      "id": "note-selection",
+      "x": 1540,
+      "y": -190,
+      "w": 460,
+      "text": "This artboard is live — click tiles to add or remove them from the carousel, and switch to HERO or THUMB to reassign those slots. The right rail renumbers and rewrites filenames as you go."
+    },
+    {
+      "id": "note-slots",
+      "x": 3080,
+      "y": -190,
+      "w": 460,
+      "text": "Slot geometry is lifted from ProjectPage.astro, not invented: A 8-col 16:9, B 4-col 1:1, FULL 12-col, C 5-col 4:3, D 7-col 16:9, FULL. Position decides the slot by default; a tile can also be pinned to one, which is a change that had to be added to Payload and the Astro page — it did not exist before."
+    },
+    {
+      "id": "note-roots",
+      "x": 3080,
+      "y": 1500,
+      "w": 460,
+      "text": "Asset roots are editable at runtime and can point at a UNC share on the project NAS. An unreachable root is skipped, never fatal — the picker names what is missing."
+    },
+    {
+      "id": "note-copy",
+      "x": 0,
+      "y": 2350,
+      "w": 460,
+      "text": "Bracketed copy is placeholder — the parser fills these from the dropped .docx. Field names and the writeup [{paragraph}] shape match the Payload schema."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

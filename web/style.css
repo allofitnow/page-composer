@@ -1,0 +1,595 @@
+/* AOIN page composer — tokens lifted verbatim from
+   allofitnow-website/frontend/src/styles/tokens.css. The brand is square:
+   radius 0 on chrome, 12px on image tiles only. */
+
+@font-face {
+  font-family: "Denim INK WD";
+  src: url("/fonts/DenimINKWD-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Denim INK WD";
+  src: url("/fonts/DenimINKWD-Medium.otf") format("opentype");
+  font-weight: 500 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "SN Ja Mono";
+  src: url("/fonts/SNJaMono-Light.otf") format("opentype");
+  font-weight: 300;
+  font-display: swap;
+}
+
+:root {
+  --cw: rgb(217, 225, 234);
+  --cw80: rgba(217, 225, 234, 0.8);
+  --cw45: rgba(217, 225, 234, 0.45);
+  --cw35: rgba(217, 225, 234, 0.35);
+  --cw14: rgba(217, 225, 234, 0.14);
+  --rule: rgba(217, 225, 234, 0.22);
+  --ink: rgb(10, 10, 10);
+  --mono: "SN Ja Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Denim INK WD", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --brand: cubic-bezier(0.05, 0.89, 0, 0.99);
+  --tile-radius: 12px;
+  --bar: 56px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  color: var(--cw);
+  font-family: var(--sans);
+  font-weight: 400;
+  overflow: hidden;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+}
+button { cursor: pointer; }
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-thumb { background: rgba(217, 225, 234, 0.2); }
+::-webkit-scrollbar-track { background: transparent; }
+
+.m { font-family: var(--mono); font-weight: 300; }
+.ov {
+  font-family: var(--mono);
+  font-weight: 300;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--cw45);
+}
+.dim { color: var(--cw45); }
+.dimmer { color: var(--cw35); }
+.grow { flex: 1 1 auto; }
+.trunc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------------------------------------------------------------- shell */
+#app { height: 100%; display: flex; flex-direction: column; }
+
+.bar {
+  height: var(--bar);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--ink);
+}
+.bar__mark { font-weight: 500; font-size: 15px; letter-spacing: 0.04em; }
+.bar__sep { width: 1px; height: 14px; background: var(--rule); }
+.bar__proj {
+  display: flex; align-items: center; gap: 9px;
+  font-family: var(--mono); font-weight: 300; font-size: 11px; letter-spacing: 0.14em;
+  color: var(--cw80);
+}
+
+.steps { display: flex; gap: 2px; }
+.step {
+  display: flex; gap: 7px; align-items: center;
+  padding: 5px 10px 4px;
+  font-family: var(--mono); font-weight: 300; font-size: 9.5px; letter-spacing: 0.2em;
+  color: var(--cw35);
+  transition: color 160ms var(--brand);
+}
+.step:hover:not(:disabled) { color: var(--cw80); }
+.step[aria-current="true"] { background: var(--cw); color: #000; }
+.step:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.screen { flex: 1 1 auto; display: flex; min-height: 0; }
+.pane { display: flex; flex-direction: column; min-height: 0; }
+.pane--l { border-right: 1px solid var(--rule); background: var(--ink); flex: 0 0 auto; }
+.pane--r { border-left: 1px solid var(--rule); background: var(--ink); flex: 0 0 auto; }
+.pane--main { flex: 1 1 auto; min-width: 0; }
+.scroll { overflow-y: auto; min-height: 0; }
+
+/* --------------------------------------------------------------- chips */
+.chip {
+  font-family: var(--mono); font-weight: 300; font-size: 9.5px; letter-spacing: 0.16em;
+  padding: 5px 11px 4px;
+  border: 1px solid var(--rule);
+  color: var(--cw45);
+  transition: color 160ms var(--brand), border-color 160ms var(--brand);
+}
+.chip:hover { color: var(--cw); border-color: var(--cw45); }
+.chip[aria-pressed="true"] { background: var(--cw); border-color: var(--cw); color: #000; }
+
+.btn {
+  font-family: var(--mono); font-weight: 300; font-size: 11px; letter-spacing: 0.2em;
+  background: var(--cw); color: #000;
+  padding: 13px 26px 12px;
+  text-align: center;
+  transition: opacity 160ms var(--brand);
+}
+.btn:hover { opacity: 0.82; }
+.btn:disabled { background: none; border: 1px solid var(--rule); color: var(--cw35); cursor: not-allowed; }
+.btn--ghost { background: none; border: 1px solid var(--cw45); color: var(--cw); }
+.btn--ghost:hover { border-color: var(--cw); opacity: 1; }
+
+.field {
+  border: 1px solid var(--rule);
+  padding: 9px 11px;
+  font-family: var(--mono); font-weight: 300; font-size: 10.5px; letter-spacing: 0.03em;
+  color: var(--cw);
+  width: 100%;
+  transition: border-color 160ms var(--brand);
+}
+.field:focus { outline: none; border-color: var(--cw); }
+select.field { appearance: none; cursor: pointer; }
+select.field option { background: var(--ink); }
+textarea.field { resize: vertical; line-height: 1.6; }
+
+/* ------------------------------------------------------------- 01 pick */
+.pick { padding: 38px 40px 0; gap: 24px; display: flex; flex-direction: column; }
+.pick h1 { margin: 0; font-weight: 500; font-size: 46px; line-height: 1; letter-spacing: 0.01em; }
+
+.prow {
+  display: grid;
+  grid-template-columns: 76px 1fr 62px 62px 96px 108px;
+  gap: 16px; align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  width: 100%;
+  color: var(--cw35);
+  transition: background 140ms var(--brand), color 140ms var(--brand);
+}
+.prow:hover { color: var(--cw80); background: rgba(217, 225, 234, 0.05); }
+.prow[aria-selected="true"] { background: var(--cw); color: #000; }
+.prow__name { font-weight: 500; font-size: 17px; letter-spacing: 0.02em; }
+
+/* ---------------------------------------------------------- 02 compose */
+.sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  /* The sheet is a flex item, so once the contact sheet is taller than the pane
+     flex gives it a *definite* height. A grid with a definite height and `auto`
+     rows divides that height between its rows instead of letting them keep
+     their content size, which squeezed every row below the tiles' 3:2 height
+     and made them overlap the row beneath. `max-content` rows cannot be
+     compressed, so the sheet overflows and scrolls the way it should. Only
+     showed up past ~50 assets, which is why small folders looked fine. */
+  grid-auto-rows: max-content;
+  gap: 10px;
+  padding-bottom: 40px;
+}
+.tile {
+  position: relative;
+  border-radius: var(--tile-radius);
+  overflow: hidden;
+  aspect-ratio: 3 / 2;
+  background: #0d0d0d;
+  opacity: 0.4;
+  outline: 0 solid transparent;
+  outline-offset: -2px;
+  transition: opacity 180ms var(--brand), outline-color 140ms var(--brand);
+  padding: 0;
+  display: block;
+  width: 100%;
+}
+.tile:hover { opacity: 0.75; }
+.tile[data-on="1"] { opacity: 1; outline: 2px solid var(--cw); }
+.tile[data-on="1"]:hover { opacity: 1; }
+.tile[data-role="hero"] { outline-color: #fff; }
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* A thumbnail still being generated should read as pending, not as a broken
+   image — the tile keeps its shape and the filename stays legible. */
+.tile img[data-pending],
+.tile img[data-failed] { visibility: hidden; }
+.tile:has(img[data-pending])::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    -45deg, rgba(217, 225, 234, 0.05) 0 8px, rgba(217, 225, 234, 0.02) 8px 16px
+  );
+}
+.tile:has(img[data-failed])::after {
+  content: 'NO PREVIEW';
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em;
+  color: var(--cw35);
+}
+.tile__badge {
+  position: absolute; top: 9px; left: 9px;
+  background: var(--cw); color: #000;
+  font-family: var(--mono); font-weight: 300; font-size: 10px; letter-spacing: 0.16em;
+  padding: 4px 7px 3px;
+}
+.tile[data-role="hero"] .tile__badge { background: #fff; }
+.tile__name {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 16px 9px 6px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0));
+  font-family: var(--mono); font-weight: 300; font-size: 9px; letter-spacing: 0.1em;
+  color: var(--cw80);
+  text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tile__vid {
+  position: absolute; top: 9px; right: 9px;
+  background: rgba(0, 0, 0, 0.7); border: 1px solid var(--cw45);
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.14em;
+  padding: 3px 6px 2px; color: var(--cw);
+}
+
+.treerow {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 0;
+  width: 100%; text-align: left;
+  color: var(--cw45);
+  font-family: var(--mono); font-weight: 300; font-size: 10.5px; letter-spacing: 0.06em;
+}
+.treerow:hover { color: var(--cw80); }
+.treerow[aria-pressed="true"] { color: var(--cw); }
+/* Fixed-width gutter so names line up whether or not a row can expand. */
+.treerow__twist {
+  flex: 0 0 auto; width: 11px; height: 11px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--cw35);
+}
+.treerow__twist:hover { color: var(--cw); }
+
+/* ---- list view (no thumbnails: instant on huge folders) ---- */
+.lrow {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1.4fr) minmax(0, 1fr) 54px 74px;
+  gap: 12px; align-items: center;
+  padding: 8px 10px;
+  width: 100%; text-align: left;
+  border-bottom: 1px solid var(--rule);
+  color: var(--cw45);
+  transition: background 120ms var(--brand), color 120ms var(--brand);
+}
+.lrow:hover { background: rgba(217, 225, 234, 0.05); color: var(--cw80); }
+.lrow[data-on="1"] { color: var(--cw); }
+.lrow__badge {
+  font-size: 9.5px; letter-spacing: 0.1em;
+  color: #000; background: transparent;
+  text-align: center; padding: 2px 0;
+}
+.lrow[data-on="1"] .lrow__badge { background: var(--cw); }
+
+/* ---- split rail: each row is the real 12-column row, to scale ---- */
+.rows { display: flex; flex-direction: column; }
+
+/* Drop here to move a tile between rows rather than split one. */
+.rowgap { height: 10px; flex: 0 0 auto; position: relative; }
+/* The seam is a 10px gap, which is not a target anyone can hit mid-drag. It
+   must NOT be opened up to fix that: growing it on dragstart moved every row
+   below it out from under the cursor, so you aimed at one row and dropped on
+   another — which broke dropping onto a tile to split it just as thoroughly as
+   it broke the seams. The hit area is enlarged past the visual gap instead,
+   which costs no layout at all, and is only switched on while a tile is in
+   flight so it cannot swallow clicks on the tiles the rest of the time. */
+.rowgap::before {
+  content: '';
+  position: absolute; left: 0; right: 0; top: -10px; bottom: -10px;
+  pointer-events: none;
+}
+.rows[data-dragging='1'] .rowgap { z-index: 3; }
+.rows[data-dragging='1'] .rowgap::before { pointer-events: auto; }
+/* Paint only — never geometry. */
+.rows[data-dragging='1'] .rowgap::after {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 50%;
+  transform: translateY(-50%);
+  height: 1px;
+  background: repeating-linear-gradient(to right, var(--cw45) 0 5px, transparent 5px 10px);
+}
+.rows[data-dragging='1'] .rowgap[data-over]::after,
+.rowgap[data-over]::after {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 50%;
+  transform: translateY(-50%);
+  height: 2px; background: var(--cw);
+}
+
+.railrow2 { display: flex; flex-direction: column; gap: 5px; }
+.railrow2__strip {
+  display: flex;
+  align-items: stretch;
+  height: 62px;
+  background: #0d0d0d;
+  border-radius: var(--tile-radius);
+  overflow: hidden;
+}
+/* A row that does not fill 12 columns is a real layout gap on the page. */
+.railrow2[data-partial="1"] .railrow2__strip { outline: 1px dashed var(--cw35); outline-offset: -1px; }
+.railrow2__meta {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 8.5px; letter-spacing: 0.18em; color: var(--cw45);
+}
+.railrow2__fill {
+  font-family: var(--mono); font-weight: 300;
+  font-size: 8.5px; letter-spacing: 0.18em;
+  color: var(--cw); border: 1px solid var(--cw45);
+  padding: 1px 6px;
+}
+.railrow2__fill:hover { background: var(--cw); color: #000; border-color: var(--cw); }
+
+.cell {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  cursor: grab;
+  background: #111;
+}
+.cell:active { cursor: grabbing; }
+.cell.dragging { opacity: 0.3; }
+.cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cell__num {
+  position: absolute; top: 5px; left: 5px;
+  background: var(--cw); color: #000;
+  font-size: 9px; letter-spacing: 0.1em; padding: 2px 5px 1px;
+}
+.cell__span {
+  position: absolute; bottom: 5px; left: 5px;
+  background: rgba(0, 0, 0, 0.7); border: 1px solid var(--cw45);
+  font-size: 8px; letter-spacing: 0.12em; padding: 2px 4px 1px; color: var(--cw);
+}
+.cell__x {
+  position: absolute; top: 4px; right: 4px;
+  color: var(--cw45); opacity: 0;
+  background: rgba(0, 0, 0, 0.6); padding: 3px;
+  transition: opacity 120ms var(--brand);
+}
+.cell:hover .cell__x { opacity: 1; }
+.cell__x:hover { color: var(--cw); }
+
+/* The drop preview: a rectangle over the half the incoming tile will take. */
+.cell[data-drop]::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0;
+  width: 50%;
+  background: rgba(217, 225, 234, 0.28);
+  border: 2px solid var(--cw);
+  pointer-events: none;
+}
+.cell[data-drop="left"]::after { left: 0; }
+.cell[data-drop="right"]::after { right: 0; }
+
+/* The seam you drag to change the ratio. */
+.divider {
+  flex: 0 0 auto;
+  width: 7px;
+  background: #000;
+  cursor: col-resize;
+  position: relative;
+  z-index: 2;
+  touch-action: none;
+}
+/* The seam is 7px so the gap between tiles stays tight, but 7px is a mean
+   target for a mouse. Widen only the grab area, either side, without moving
+   anything: the pseudo-element is transparent and events still land on the
+   divider itself. */
+.divider::before {
+  content: '';
+  position: absolute; top: 0; bottom: 0; left: -5px; right: -5px;
+}
+.divider::after {
+  content: '';
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 1px; height: 18px;
+  background: var(--cw45);
+}
+.divider:hover { background: var(--cw); }
+.divider:hover::after { background: #000; }
+
+/* the ordered carousel rail */
+.railrow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--rule);
+  cursor: grab;
+}
+.railrow.dragging { opacity: 0.35; }
+.railrow.over { border-top: 2px solid var(--cw); }
+.railrow img { width: 52px; height: 35px; object-fit: cover; border-radius: 3px; display: block; flex: 0 0 auto; }
+.railrow__num { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; width: 18px; flex: 0 0 auto; }
+.railrow__meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.railrow__out { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.04em; color: var(--cw80); }
+.railrow__slot {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.14em;
+  color: var(--cw35);
+  border: 1px solid var(--rule);
+  padding: 2px 5px 1px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.railrow__slot:hover { color: var(--cw); border-color: var(--cw45); }
+.railrow__slot[data-manual="1"] { color: #000; background: var(--cw); border-color: var(--cw); }
+.railrow__x { color: var(--cw35); padding: 4px; flex: 0 0 auto; }
+.railrow__x:hover { color: var(--cw); }
+
+/* ----------------------------------------------------------- 03 previz */
+.previz { width: 800px; border: 1px solid var(--rule); padding: 22px; background: #040404; display: flex; flex-direction: column; gap: 18px; }
+.pgrid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.pgrid--tight { gap: 6px; }
+.ptile { position: relative; border-radius: 10px; overflow: hidden; background: #101010; }
+.ptile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ptile__tag {
+  position: absolute; top: 8px; left: 8px;
+  background: rgba(0, 0, 0, 0.72); border: 1px solid rgba(217, 225, 234, 0.35);
+  font-family: var(--mono); font-weight: 300; font-size: 9px; letter-spacing: 0.16em;
+  padding: 4px 7px 3px;
+}
+.ptile__tag[data-manual="1"] { background: var(--cw); color: #000; border-color: var(--cw); }
+.slot-a { grid-column: 1 / span 8; aspect-ratio: 16 / 9; }
+.slot-b { grid-column: 9 / span 4; align-self: end; aspect-ratio: 1 / 1; }
+.slot-c { grid-column: 1 / span 5; aspect-ratio: 4 / 3; }
+.slot-d { grid-column: 6 / span 7; align-self: end; aspect-ratio: 16 / 9; }
+.slot-full { grid-column: 1 / -1; height: 150px; }
+
+/* ----------------------------------------------------------- 05 export */
+.xrow {
+  display: grid;
+  grid-template-columns: 34px 1fr 14px 1fr 58px 108px 90px;
+  gap: 12px; align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--mono); font-weight: 300; font-size: 10px; letter-spacing: 0.03em;
+}
+.xrow[data-status="queued"] { color: var(--cw35); }
+.xrow[data-status="done"] { color: var(--cw80); }
+.xrow[data-status="running"] { color: var(--cw); }
+.xrow[data-status="failed"] { color: var(--cw); }
+.xrow[data-status="failed"] .xstatus { text-decoration: underline; }
+
+.track { height: 3px; background: var(--cw14); position: relative; }
+.track > i { position: absolute; inset: 0 auto 0 0; background: var(--cw); display: block; }
+
+.log { display: flex; flex-direction: column; gap: 5px; max-height: 130px; overflow-y: auto; }
+.log > div { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; color: var(--cw35); }
+.log > div:last-child { color: var(--cw80); }
+
+.toast {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+  background: var(--cw); color: #000;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
+  padding: 11px 20px 10px;
+  z-index: 50;
+}
+.toast[data-kind="error"] { background: #000; color: var(--cw); border: 1px solid var(--cw); }
+
+.empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; height: 100%;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; color: var(--cw35);
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------- CMS sign-in */
+/* A real overlay rather than a screen swap, because publishing can raise it
+   from anywhere without losing the step you were on. */
+.modal {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+}
+.modal__box {
+  width: 420px; max-width: calc(100vw - 40px);
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 26px 28px;
+  background: var(--ink);
+  border: 1px solid var(--cw45);
+}
+.modal__note {
+  font-size: 9.5px; letter-spacing: 0.1em; line-height: 1.6;
+  color: var(--cw80);
+  border-left: 2px solid var(--cw45);
+  padding: 2px 0 2px 10px;
+}
+.modal__err {
+  font-size: 9.5px; letter-spacing: 0.1em; line-height: 1.6;
+  color: #ffb4b4;
+  border: 1px solid rgba(255, 120, 120, 0.5);
+  padding: 8px 10px;
+}
+.check {
+  display: flex; align-items: flex-start; gap: 10px;
+  cursor: pointer;
+}
+.check input {
+  /* The brand is square — the default rounded checkbox is the one control that
+     would break that, so it is drawn here instead. */
+  appearance: none; -webkit-appearance: none;
+  flex: 0 0 auto;
+  width: 14px; height: 14px; margin: 1px 0 0;
+  border: 1px solid var(--cw45); background: none;
+  cursor: pointer;
+}
+.check input:checked {
+  background: var(--cw);
+  box-shadow: inset 0 0 0 3px var(--ink);
+}
+
+/* -------------------------------------------------------------- loading */
+/* The NAS can take tens of seconds. An indeterminate bar says "working", the
+   elapsed count says "still working" — which is the part that stops a slow
+   share reading as a hung app. Square, like everything else in the brand. */
+.loader {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 30px 0;
+  min-width: 0;
+}
+.loader__bar {
+  position: relative;
+  height: 2px;
+  background: var(--cw14, rgba(217, 225, 234, 0.14));
+  overflow: hidden;
+}
+.loader__bar span {
+  position: absolute; top: 0; bottom: 0; left: 0;
+  width: 34%;
+  background: var(--cw);
+  animation: loader-sweep 1150ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes loader-sweep {
+  0%   { left: -34%; }
+  100% { left: 100%; }
+}
+.loader__text {
+  display: flex; align-items: baseline; gap: 10px;
+}
+.loader__label {
+  font-size: 9.5px; letter-spacing: 0.22em; color: var(--cw);
+}
+/* The count is the honest bit, so it gets its own emphasis. */
+.loader__secs {
+  font-size: 9.5px; letter-spacing: 0.14em; color: var(--cw45);
+  font-variant-numeric: tabular-nums;
+}
+.loader__detail {
+  font-size: 8.5px; letter-spacing: 0.08em; line-height: 1.6;
+  word-break: break-all;
+}
+/* The overlay form is a wait, not a question — no border, nothing to click. */
+.modal--quiet { background: rgba(0, 0, 0, 0.82); }
+.modal--quiet .modal__box { border-color: var(--rule); width: 420px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .loader__bar span { animation-duration: 2400ms; }
+}
+
+/* A video cannot be the key image, so in HERO mode it reads as unavailable
+   rather than only refusing once clicked. */
+.tile[data-blocked="1"],
+.lrow[data-blocked="1"] {
+  opacity: 0.18;
+  cursor: not-allowed;
+}
+.tile[data-blocked="1"]:hover,
+.lrow[data-blocked="1"]:hover { opacity: 0.18; }

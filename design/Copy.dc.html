@@ -1,0 +1,192 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+/*@AOIN-FONTS*/
+:root {
+  --cw: #D9E1EA;
+  --cw80: rgba(217, 225, 234, 0.8);
+  --cw45: rgba(217, 225, 234, 0.45);
+  --cw35: rgba(217, 225, 234, 0.35);
+  --rule: rgba(217, 225, 234, 0.22);
+  --ink: #0A0A0A;
+  --mono: "SN Ja Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Denim INK WD", -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+body { margin: 0; background: #000; color: var(--cw); font-family: var(--sans); font-weight: 400; }
+a { color: var(--cw); text-decoration: none; }
+a:hover { color: var(--cw45); }
+.ov { font-family: var(--mono); font-weight: 300; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--cw45); }
+.m { font-family: var(--mono); font-weight: 300; }
+.map { display: grid; grid-template-columns: 116px 1fr; gap: 14px; padding: 11px 0; border-bottom: 1px solid var(--rule); align-items: start; }
+.tag { font-family: var(--mono); font-weight: 300; font-size: 8.5px; letter-spacing: 0.16em; color: var(--cw35); padding-top: 3px; }
+.src { font-family: var(--mono); font-weight: 300; font-size: 10.5px; line-height: 1.75; letter-spacing: 0.02em; color: var(--cw80); }
+.fld { display: flex; flex-direction: column; gap: 7px; }
+.lbl { font-family: var(--mono); font-weight: 300; font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--cw45); }
+.box { border: 1px solid var(--rule); padding: 9px 11px; font-family: var(--mono); font-weight: 300; font-size: 10.5px; letter-spacing: 0.03em; color: var(--cw); line-height: 1.6; }
+.chip { font-family: var(--mono); font-weight: 300; font-size: 9px; letter-spacing: 0.14em; padding: 5px 10px 4px; border: 1px solid var(--rule); color: var(--cw45); }
+.chipOn { background: var(--cw); color: #000; border-color: var(--cw); }
+  </style>
+</helmet>
+<div style="width:1440px;height:1160px;display:flex;flex-direction:column;background:#000;overflow:hidden">
+
+  <div style="height:56px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--rule);background:var(--ink)">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-weight:500;font-size:15px;letter-spacing:0.04em">AOIN</span>
+      <span style="width:1px;height:14px;background:var(--rule)"></span>
+      <span class="ov">Page Composer</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:2px">
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>01</span><span>PICK</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>02</span><span>COMPOSE</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>03</span><span>PREVIZ</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;background:var(--cw);color:#000;font-size:9.5px;letter-spacing:0.2em"><span>04</span><span>COPY</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>05</span><span>EXPORT</span></div>
+    </div>
+  </div>
+
+  <div style="flex:1 1 auto;display:flex;min-height:0">
+
+    <div style="width:640px;flex:0 0 auto;border-right:1px solid var(--rule);background:var(--ink);display:flex;flex-direction:column;padding:28px 30px;gap:20px;overflow:hidden">
+
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="ov">Source Doc</span>
+        <span class="m" style="font-size:9px;letter-spacing:0.16em;color:var(--cw35)">DROPPED IN 26013_PESO-DINASTIA</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--rule);padding:11px 13px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(217,225,234,0.45)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg>
+        <span class="m" style="font-size:10.5px;letter-spacing:0.04em;flex:1 1 auto">peso-dinastia_writeup.docx</span>
+        <span class="m" style="font-size:9px;letter-spacing:0.14em;color:var(--cw35)">18 KB</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;overflow:hidden">
+        <div class="map" style="border-bottom:1px solid var(--cw);padding-bottom:8px">
+          <span class="m" style="font-size:8.5px;letter-spacing:0.22em;color:var(--cw45)">MAPS TO</span>
+          <span class="m" style="font-size:8.5px;letter-spacing:0.22em;color:var(--cw45)">DOCUMENT</span>
+        </div>
+
+        <div class="map"><span class="tag">title</span><span class="src" style="font-size:13px;letter-spacing:0.08em;color:var(--cw)">PESO DINASTIA</span></div>
+        <div class="map"><span class="tag">tour</span><span class="src">Dinastia Tour</span></div>
+        <div class="map"><span class="tag">client / year</span><span class="src">Live Nation &mdash; 2026</span></div>
+        <div class="map"><span class="tag">role</span><span class="src">Real-Time Content</span></div>
+        <div class="map"><span class="tag">scope</span><span class="src">LED / Playback</span></div>
+        <div class="map"><span class="tag">collaborator</span><span class="src">All Of It Now x [PARTNER STUDIO]</span></div>
+        <div class="map"><span class="tag">summary</span><span class="src">[ONE-LINE LEDE FROM THE DOC &mdash; the short line that runs under the hero and on the work index.]</span></div>
+        <div class="map"><span class="tag">writeup.lead</span><span class="src">[LEAD PARAGRAPH. The opening of the production notes panel, set apart from the body copy.]</span></div>
+        <div class="map"><span class="tag">writeup.body[0]</span><span class="src">[BODY PARAGRAPH ONE. Everything between the lead and the stats block becomes a paragraph entry.]</span></div>
+        <div class="map"><span class="tag">writeup.body[1]</span><span class="src">[BODY PARAGRAPH TWO.]</span></div>
+        <div class="map"><span class="tag">stats[]</span><span class="src">LED Surface / 1,240m2 &nbsp;&middot;&nbsp; Shows / 38 &nbsp;&middot;&nbsp; Content Min / 96 &nbsp;&middot;&nbsp; Cities / 22</span></div>
+        <div class="map" style="border-bottom:0"><span class="tag">credits[]</span><span class="src">Creative Direction &mdash; @handle<br>Content Design &mdash; @handle<br>Playback &mdash; @handle</span></div>
+      </div>
+
+      <div style="flex:1 1 auto"></div>
+      <p class="m" style="margin:0;font-size:9px;line-height:1.7;letter-spacing:0.1em;color:var(--cw35);text-transform:uppercase">Headings drive the mapping. Anything unrecognised is listed below for manual assignment.</p>
+    </div>
+
+    <div style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;padding:28px 34px;gap:20px;overflow:hidden">
+
+      <div style="display:flex;align-items:flex-end;justify-content:space-between">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span class="ov">Payload Fields</span>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw35)">EDIT ANYTHING THE PARSER GOT WRONG</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--cw);padding:6px 12px 5px">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg>
+          <span class="m" style="font-size:9.5px;letter-spacing:0.16em">14 / 14 REQUIRED</span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:16px">
+        <div class="fld"><span class="lbl">Title</span><div class="box">PESO DINASTIA</div></div>
+        <div class="fld"><span class="lbl">Slug</span><div class="box">peso-dinastia</div></div>
+        <div class="fld"><span class="lbl">Client</span><div class="box">LIVE NATION</div></div>
+        <div class="fld"><span class="lbl">Year</span><div class="box">2026</div></div>
+        <div class="fld"><span class="lbl">Tour</span><div class="box">DINASTIA TOUR</div></div>
+        <div class="fld"><span class="lbl">Scope</span><div class="box">LED / PLAYBACK</div></div>
+      </div>
+
+      <div class="fld">
+        <span class="lbl">Role</span>
+        <div class="box" style="display:flex;align-items:center;justify-content:space-between">
+          <span>REAL-TIME CONTENT</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(217,225,234,0.45)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>
+        </div>
+      </div>
+
+      <div class="fld">
+        <span class="lbl">Capabilities</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <span class="chip chipOn">REAL-TIME CONTENT</span>
+          <span class="chip chipOn">SCREENS PRODUCTION</span>
+          <span class="chip">MIXED REALITY</span>
+          <span class="chip">EQUIPMENT RENTAL</span>
+        </div>
+      </div>
+
+      <div class="fld">
+        <span class="lbl">Summary</span>
+        <div class="box" style="min-height:44px">[ONE-LINE LEDE FROM THE DOC — the short line that runs under the hero and on the work index.]</div>
+      </div>
+
+      <div class="fld">
+        <span class="lbl">Write-up / Lead</span>
+        <div class="box" style="min-height:44px">[LEAD PARAGRAPH. The opening of the production notes panel, set apart from the body copy.]</div>
+      </div>
+
+      <div class="fld">
+        <span class="lbl">Write-up / Body</span>
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div class="box" style="display:flex;gap:11px"><span style="color:var(--cw35);flex:0 0 auto">01</span><span>[BODY PARAGRAPH ONE. Everything between the lead and the stats block becomes a paragraph entry.]</span></div>
+          <div class="box" style="display:flex;gap:11px"><span style="color:var(--cw35);flex:0 0 auto">02</span><span>[BODY PARAGRAPH TWO.]</span></div>
+        </div>
+        <span class="m" style="font-size:8.5px;letter-spacing:0.14em;color:var(--cw35);text-transform:uppercase">Sent as [{paragraph}], never plain strings</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:16px">
+        <div class="fld">
+          <span class="lbl">Stats</span>
+          <div style="display:flex;flex-direction:column;border:1px solid var(--rule)">
+            <div style="display:flex;justify-content:space-between;padding:8px 11px;border-bottom:1px solid var(--rule)"><span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">LED SURFACE</span><span class="m" style="font-size:10px">1,240M2</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px 11px;border-bottom:1px solid var(--rule)"><span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">SHOWS</span><span class="m" style="font-size:10px">38</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px 11px;border-bottom:1px solid var(--rule)"><span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">CONTENT MIN</span><span class="m" style="font-size:10px">96</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px 11px"><span class="m" style="font-size:9.5px;letter-spacing:0.14em;color:var(--cw45)">CITIES</span><span class="m" style="font-size:10px">22</span></div>
+          </div>
+        </div>
+        <div class="fld">
+          <span class="lbl">Credits</span>
+          <div style="display:flex;flex-direction:column;border:1px solid var(--rule)">
+            <div style="padding:8px 11px;border-bottom:1px solid var(--rule)"><span class="m" style="font-size:8.5px;letter-spacing:0.22em;color:var(--cw35)">ALL OF IT NOW</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px 11px;border-bottom:1px solid var(--rule)"><span class="m" style="font-size:9.5px;letter-spacing:0.1em;color:var(--cw45)">CREATIVE DIRECTION</span><span class="m" style="font-size:10px">@handle</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px 11px;border-bottom:1px solid var(--rule)"><span class="m" style="font-size:9.5px;letter-spacing:0.1em;color:var(--cw45)">CONTENT DESIGN</span><span class="m" style="font-size:10px">@handle</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px 11px"><span class="m" style="font-size:9.5px;letter-spacing:0.1em;color:var(--cw45)">PLAYBACK</span><span class="m" style="font-size:10px">@handle</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1 1 auto"></div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding-top:16px;border-top:1px solid var(--rule)">
+        <span class="m" style="font-size:9px;letter-spacing:0.14em;color:var(--cw35);text-transform:uppercase">Order auto-assigned as 07 &mdash; next free slot</span>
+        <div class="m" style="background:var(--cw);color:#000;padding:12px 30px 11px;font-size:10.5px;letter-spacing:0.2em;cursor:pointer">CONTINUE TO EXPORT</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

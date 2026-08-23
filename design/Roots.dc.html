@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+/*@AOIN-FONTS*/
+:root {
+  --cw: #D9E1EA;
+  --cw80: rgba(217, 225, 234, 0.8);
+  --cw45: rgba(217, 225, 234, 0.45);
+  --cw35: rgba(217, 225, 234, 0.35);
+  --rule: rgba(217, 225, 234, 0.22);
+  --ink: #0A0A0A;
+  --mono: "SN Ja Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Denim INK WD", -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+body { margin: 0; background: #000; color: var(--cw); font-family: var(--sans); font-weight: 400; }
+a { color: var(--cw); text-decoration: none; }
+a:hover { color: var(--cw45); }
+.ov { font-family: var(--mono); font-weight: 300; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--cw45); }
+.m { font-family: var(--mono); font-weight: 300; }
+.chip { font-family: var(--mono); font-weight: 300; font-size: 9.5px; letter-spacing: 0.16em; padding: 5px 11px 4px; border: 1px solid var(--rule); color: var(--cw45); }
+.rootrow { display: flex; gap: 10px; align-items: center; border: 1px solid var(--rule); padding: 10px 12px; }
+.rowinput { font-family: var(--mono); font-weight: 300; font-size: 10.5px; letter-spacing: 0.03em; }
+  </style>
+</helmet>
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#000;overflow:hidden">
+
+  <div style="height:56px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid var(--rule);background:var(--ink)">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-weight:500;font-size:15px;letter-spacing:0.04em">AOIN</span>
+      <span style="width:1px;height:14px;background:var(--rule)"></span>
+      <span class="ov">Page Composer</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:2px">
+      <div class="m" style="display:flex;align-items:center;gap:7px;padding:5px 10px 4px;background:var(--cw);color:#000;font-size:9.5px;letter-spacing:0.2em;margin-right:10px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"></circle><path d="M12 2.6v2.2M12 19.2v2.2M4.3 4.3l1.6 1.6M18.1 18.1l1.6 1.6M2.6 12h2.2M19.2 12h2.2M4.3 19.7l1.6-1.6M18.1 5.9l1.6-1.6"></path></svg>
+        <span>ROOTS</span>
+      </div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>01</span><span>PICK</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>02</span><span>COMPOSE</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>03</span><span>PREVIZ</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>04</span><span>COPY</span></div>
+      <div class="m" style="display:flex;gap:7px;padding:4px 9px 3px;color:var(--cw35);font-size:9.5px;letter-spacing:0.2em"><span>05</span><span>EXPORT</span></div>
+    </div>
+  </div>
+
+  <div style="flex:1 1 auto;display:flex;flex-direction:column;padding:34px 40px;gap:22px;min-height:0">
+
+    <div style="display:flex;align-items:flex-end;justify-content:space-between">
+      <div style="display:flex;flex-direction:column;gap:13px">
+        <span class="ov">Settings</span>
+        <h1 style="margin:0;font-weight:500;font-size:46px;line-height:1;letter-spacing:0.01em">Asset roots</h1>
+      </div>
+      <div class="chip">CLOSE</div>
+    </div>
+
+    <p class="m" style="margin:0;font-size:10px;line-height:1.75;letter-spacing:0.06em;color:var(--cw35);max-width:640px">
+      Each root is a folder holding project folders. A local drive, a mapped drive, or a UNC share on the NAS. Roots are scanned in order; an unreachable one is skipped rather than failing the app.
+    </p>
+
+    <div style="display:flex;flex-direction:column;gap:10px">
+
+      <div class="rootrow">
+        <span style="display:flex;color:var(--cw)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1"></rect><rect x="3" y="13" width="18" height="7" rx="1"></rect><path d="M7 7.5h.01M7 16.5h.01"></path></svg></span>
+        <span class="rowinput" style="width:110px;letter-spacing:0.16em">2026</span>
+        <span class="rowinput" style="flex:1 1 auto;color:var(--cw80)">A:\!-Project Assets\z-2026- Projects</span>
+        <span class="m" style="font-size:8.5px;letter-spacing:0.18em;color:var(--cw)">ONLINE</span>
+        <span class="chip">BROWSE</span>
+        <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></span>
+      </div>
+
+      <div class="rootrow" style="border-color:var(--cw)">
+        <span style="display:flex;color:var(--cw35)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1"></rect><rect x="3" y="13" width="18" height="7" rx="1"></rect><path d="M7 7.5h.01M7 16.5h.01"></path></svg></span>
+        <span class="rowinput" style="width:110px;letter-spacing:0.16em">NAS</span>
+        <span class="rowinput" style="flex:1 1 auto;color:var(--cw)">\\nas01\projects\z-2026</span>
+        <span class="m" style="font-size:8.5px;letter-spacing:0.18em;color:var(--cw35)">UNREACHABLE</span>
+        <span class="chip" style="border-color:var(--cw);color:var(--cw)">BROWSE</span>
+        <span style="color:var(--cw35);display:flex"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></span>
+      </div>
+
+      <div class="chip" style="align-self:flex-start;border-style:solid">+ ADD ROOT</div>
+    </div>
+
+    <div style="border:1px solid var(--cw);padding:14px 16px;display:flex;flex-direction:column;gap:10px;max-height:300px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="ov">Browse</span>
+        <span class="m" style="flex:1 1 auto;font-size:10px;color:var(--cw);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\\nas01\projects</span>
+        <span class="chip" style="display:flex;align-items:center;gap:6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>UP</span>
+        <span class="chip" style="background:var(--cw);border-color:var(--cw);color:#000">USE THIS FOLDER</span>
+      </div>
+      <div style="display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;color:var(--cw45);font-family:var(--mono);font-size:10.5px;letter-spacing:0.06em">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+          <span>z-2024-Projects</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;color:var(--cw45);font-family:var(--mono);font-size:10.5px;letter-spacing:0.06em">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+          <span>z-2025-Projects</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;color:var(--cw);font-family:var(--mono);font-size:10.5px;letter-spacing:0.06em">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+          <span>z-2026-Projects</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:9px;padding-top:18px;border-top:1px solid var(--rule);max-width:520px">
+      <span class="ov">CMS target</span>
+      <div style="border:1px solid var(--rule);padding:9px 11px;font-family:var(--mono);font-size:10.5px;letter-spacing:0.03em">http://192.168.30.245</div>
+      <span class="m" style="font-size:8.5px;letter-spacing:0.14em;color:var(--cw35)">CREDENTIALS LOADED FROM ENVIRONMENT</span>
+    </div>
+
+    <div style="flex:1 1 auto"></div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <div class="m" style="border:1px solid var(--cw45);color:var(--cw);padding:13px 26px 12px;font-size:11px;letter-spacing:0.2em">CANCEL</div>
+      <div class="m" style="background:var(--cw);color:#000;padding:13px 26px 12px;font-size:11px;letter-spacing:0.2em">SAVE AND RESCAN</div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
