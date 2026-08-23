@@ -290,6 +290,14 @@ the share comes back.
 
 ## Config
 
+`config.json` is **not in the repository** — it holds the CMS address and, if
+you tick *remember my login on this device*, the admin password in plain text.
+After cloning, copy the template and let the app fill in the rest:
+
+```bash
+cp config.example.json config.json
+```
+
 `config.json` (the ROOTS panel writes `roots` and the CMS url here):
 
 - `roots` — project folders to scan, in order
@@ -310,6 +318,39 @@ Tauri `invoke('…')`, so the UI code is identical in both.
 npm run desktop:dev     # run the desktop app
 npm run desktop:build   # produce an installer (NSIS, per-user)
 ```
+
+On **this Windows machine** build with the target directory on a local disk —
+the default one sits on the A: share, where a cold build fails with spurious
+`can't find crate` errors:
+
+```bash
+CARGO_TARGET_DIR="$LOCALAPPDATA/Temp/aoin-composer-target" ./node_modules/.bin/tauri build --bundles nsis
+```
+
+`cargo tauri` is not installed globally; the CLI is a devDependency at
+`node_modules/.bin/tauri`.
+
+### Building on macOS
+
+Needs Xcode command line tools, Rust, Node, and `brew install ffmpeg`. Copy the
+source **without** `node_modules` or `src-tauri/target` (native module, wrong-OS
+objects), then `npm install`. `bundle.targets` is pinned to `nsis` for Windows,
+so override it rather than editing the file:
+
+```bash
+npm run tauri build -- --bundles app,dmg
+```
+
+Four differences to expect. The app is unsigned, so Gatekeeper blocks the first
+launch — right-click → Open, or `xattr -dr com.apple.quarantine` on the bundle.
+The UNC roots do not resolve: mount `smb://aoin-nas/AOIN-NAS` and point ROOTS at
+the `/Volumes/...` equivalents. Credentials are per-machine, so sign in again.
+And the publish trace log moves to `$TMPDIR/page-composer-publish.log`.
+
+ffmpeg detection lists Homebrew's prefixes explicitly (`/opt/homebrew/bin` on
+Apple Silicon, `/usr/local/bin` on Intel) because a GUI app launched from Finder
+inherits no shell `PATH` — a bare `ffmpeg` resolves to nothing there even when
+the terminal finds it.
 
 The Rust backend in `src-tauri/src/` mirrors `server/` module for module:
 
