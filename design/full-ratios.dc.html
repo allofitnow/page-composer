@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Full-width ratios</title>
+<style>
+  /* Full-width rows only, at the site's own metrics: 12-col grid where `full`
+     spans 1/-1, 10px radius, object-fit: cover, on black. Each candidate ratio
+     is rendered at true page proportion so the heights are honest. */
+  :root { --cw: rgb(217, 225, 234); --dim: #7b828c; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; color: var(--cw);
+    font: 12px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .06em; }
+  .wrap { padding: 26px 40px 90px; max-width: 1600px; margin: 0 auto; }
+  h1 { font-size: 13px; letter-spacing: .22em; font-weight: 500; margin: 0 0 6px; }
+  .sub { color: var(--dim); margin: 0 0 22px; max-width: 100ch; line-height: 1.75; }
+  .sub b { color: var(--cw); font-weight: 500; }
+
+  .picker { display: flex; gap: 8px; flex-wrap: wrap; position: sticky; top: 0;
+    background: #000; padding: 12px 0; z-index: 5; border-bottom: 1px solid #1c1f24; margin-bottom: 4px; }
+  .picker button { font: inherit; letter-spacing: .14em; font-size: 10px;
+    color: var(--dim); background: none; border: 1px solid #24282e; padding: 7px 12px; cursor: pointer; }
+  .picker button[aria-pressed="true"] { color: #000; background: var(--cw); border-color: var(--cw); }
+
+  .band { padding: 22px 0 4px; border-bottom: 1px solid #14171b; }
+  .bandHead { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+  .bandName { font-size: 11px; letter-spacing: .2em; }
+  .bandName .now { color: #ffd166; margin-left: 10px; font-size: 9px; letter-spacing: .18em; }
+  .verdict { font-size: 10px; letter-spacing: .14em; }
+  .verdict.good { color: #6bffb0; }
+  .verdict.warn { color: #ffd166; }
+  .verdict.bad  { color: #ff6b6b; }
+
+  .row { display: grid; grid-template-columns: repeat(12, 1fr); }
+  .cell { grid-column: 1 / -1; position: relative; overflow: hidden; border-radius: 10px; }
+  .cell img { width: 100%; height: 100%; display: block; object-fit: cover; }
+  .px { position: absolute; left: 10px; bottom: 10px; font-size: 9px; letter-spacing: .14em;
+    background: rgba(0,0,0,.72); padding: 3px 8px; border-radius: 3px; color: var(--dim); }
+
+  table { border-collapse: collapse; margin-top: 30px; font-size: 11px; width: 100%; max-width: 860px; }
+  th, td { text-align: left; padding: 7px 14px 7px 0; border-bottom: 1px solid #14171b; }
+  th { color: var(--dim); font-weight: 500; letter-spacing: .16em; font-size: 9px; }
+  td b { font-weight: 500; }
+  .note { color: var(--dim); line-height: 1.8; margin-top: 26px; max-width: 100ch; }
+  .note b { color: var(--cw); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>FULL-WIDTH RATIOS</h1>
+  <p class="sub">
+    One full-width row, rendered at the site's real proportions, in each candidate ratio.
+    Everything is <b>object-fit: cover</b> exactly as the site does it today, so what you see is what
+    would publish. Pick an asset to push through all four.
+    <b>16/7 is what `full` is today</b> — the others are the proposal.
+  </p>
+
+  <div class="picker" id="picker"></div>
+  <div id="bands"></div>
+
+  <table id="dist">
+    <thead><tr><th>CANDIDATE</th><th>FITS WITHIN 5%</th><th>CROPS SIDES</th><th>CROPS TOP/BOTTOM</th><th>MEDIAN WASTE</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <p class="note" id="note"></p>
+</div>
+
+<script>
+const CMS = 'http://192.168.30.245/media/';
+
+const RATIOS = [
+  { name: '16/9', v: 16 / 9 },
+  { name: '2/1',  v: 2 },
+  { name: '16/7', v: 16 / 7, current: true },
+  { name: '3/1',  v: 3 },
+];
+
+const ASSETS = [
+  { name: 'THE KID LAROI',  src: 'the-kid-laroi-a-perfect-world-tour_gallery01-1.webp', w: 2560, h: 711 },
+  { name: 'MORGAN WALLEN',  src: 'services-rtc_morganwallen_glass.webp',                w: 960,  h: 376 },
+  { name: 'PESO DINASTIA',  src: 'services-sp_peso-dinastia_hero.webp',                 w: 8250, h: 3991 },
+  { name: 'BAD OMENS',      src: 'bad-omens-do-you-feel-love-tour_gallery01.webp',      w: 2560, h: 1708 },
+];
+
+// Measured across the 125 media docs that carry usable dimensions.
+const DIST = [
+  { name: '16/9',              fit: 61, sides: 10, tb: 54,  waste: '7%' },
+  { name: '2/1',               fit: 5,  sides: 4,  tb: 116, waste: '11%' },
+  { name: '16/7 (current)',    fit: 0,  sides: 3,  tb: 122, waste: '22%' },
+  { name: '3/1',               fit: 0,  sides: 1,  tb: 124, waste: '41%' },
+];
+
+let chosen = 0;
+
+function render() {
+  const a = ASSETS[chosen];
+  const r = a.w / a.h;
+  const bands = document.getElementById('bands');
+  bands.textContent = '';
+
+  for (const cand of RATIOS) {
+    const wasted = r > cand.v ? 1 - cand.v / r : 1 - r / cand.v;
+    const pct = Math.round(wasted * 100);
+    const where = Math.abs(r - cand.v) < 0.02 ? 'nothing lost' : r > cand.v ? 'sides cut' : 'top & bottom cut';
+
+    const band = document.createElement('div');
+    band.className = 'band';
+
+    const head = document.createElement('div');
+    head.className = 'bandHead';
+    head.innerHTML =
+      `<span class="bandName">FULL WIDTH · ${cand.name}` +
+      (cand.current ? '<span class="now">← WHAT THE SITE USES NOW</span>' : '') + '</span>' +
+      `<span class="verdict ${pct < 5 ? 'good' : pct < 20 ? 'warn' : 'bad'}">` +
+      `${pct < 5 ? 'FITS' : `−${pct}% · ${where}`}</span>`;
+    band.appendChild(head);
+
+    const row = document.createElement('div');
+    row.className = 'row';
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.style.aspectRatio = `${cand.v}`;
+    const img = document.createElement('img');
+    img.src = CMS + a.src;
+    img.alt = '';
+    cell.appendChild(img);
+    const px = document.createElement('span');
+    px.className = 'px';
+    cell.appendChild(px);
+    row.appendChild(cell);
+    band.appendChild(row);
+    bands.appendChild(band);
+
+    // Real rendered numbers, once layout has settled.
+    requestAnimationFrame(() => {
+      const b = cell.getBoundingClientRect();
+      px.textContent = `${a.name} · ${r.toFixed(2)}:1 · row is ${Math.round(b.height)}px tall here`;
+    });
+  }
+}
+
+const picker = document.getElementById('picker');
+ASSETS.forEach((a, i) => {
+  const b = document.createElement('button');
+  b.textContent = `${a.name} · ${(a.w / a.h).toFixed(2)}:1`;
+  b.setAttribute('aria-pressed', String(i === 0));
+  b.onclick = () => {
+    chosen = i;
+    [...picker.children].forEach((c, j) => c.setAttribute('aria-pressed', String(j === i)));
+    render();
+  };
+  picker.appendChild(b);
+});
+
+const tb = document.querySelector('#dist tbody');
+for (const d of DIST) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td><b>${d.name}</b></td><td>${d.fit} of 125</td><td>${d.sides}</td><td>${d.tb}</td><td>${d.waste}</td>`;
+  tb.appendChild(tr);
+}
+
+document.getElementById('note').innerHTML =
+  'The table is the whole media library — <b>125 docs</b> that carry usable dimensions — measured against each candidate.<br>' +
+  'The headline: <b>16/7 fits nothing.</b> 122 of 125 assets are TALLER than it, so today the site is quietly cutting their ' +
+  'top and bottom, median 22%. The ultra-wide problem is real but rare — only 3 assets are wider than 16/7.<br>' +
+  '<b>16/9 fits 61 of 125 outright</b>, because the library is mostly 16:9 frames and renders.<br>' +
+  'Adding ratios is a smaller change than changing fit behaviour: <b>layout</b> is already a select on the collection and ' +
+  'already cycles in the composer. Each new option needs a value in Projects.ts, a CSS rule in ProjectPage.astro, and an ' +
+  'entry in the composer\'s LAYOUTS table.';
+render();
+</script>
+</body>
+</html>

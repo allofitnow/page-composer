@@ -53,6 +53,12 @@ const CMS = {
   'split-8-4': [8, 4],
   'split-5-7': [5, 7],
   'three-up': [4, 4, 4],
+  // Full width comes in four heights so a row can match its picture. 16/7 was
+  // the only one, and it fits almost nothing: of 125 media docs, 122 are taller
+  // than it and lose their top and bottom.
+  'full-16-9': [12],
+  'full-2-1': [12],
+  'full-3-1': [12],
 };
 check('layout set matches the CMS exactly', Object.keys(api.LAYOUTS).sort(), Object.keys(CMS).sort());
 for (const [name, spans] of Object.entries(CMS)) {
@@ -64,7 +70,15 @@ for (const [name, spans] of Object.entries(CMS)) {
 // 2. The aspects and baseline alignment are the site's, not ours.
 check('split-8-4 is 16:9 then 1:1', [api.aspectFor('split-8-4', 0), api.aspectFor('split-8-4', 1)], ['16 / 9', '1 / 1']);
 check('split-5-7 is 4:3 then 16:9', [api.aspectFor('split-5-7', 0), api.aspectFor('split-5-7', 1)], ['4 / 3', '16 / 9']);
-check('full has no aspect (fixed band)', api.aspectFor('full', 0), null);
+// Every full-width height, and these MUST equal the CSS in ProjectPage.astro.
+// `full` used to be null here while the site cropped it to 16/7, so previz
+// showed an uncropped image and the site published a cropped one.
+check('the four full-width heights match the site', [
+  api.aspectFor('full-16-9', 0),
+  api.aspectFor('full-2-1', 0),
+  api.aspectFor('full', 0),
+  api.aspectFor('full-3-1', 0),
+], ['16 / 9', '2 / 1', '16 / 7', '3 / 1']);
 check('the wide-right slot sits on the baseline', [api.alignEndFor('split-8-4', 1), api.alignEndFor('split-5-7', 1)], [true, true]);
 check('the left slot never does', [api.alignEndFor('split-8-4', 0), api.alignEndFor('two-up', 1)], [false, false]);
 
@@ -164,8 +178,43 @@ check('seam positions are 5, 6, 8 columns', api.SEAM_LEFT, [5, 6, 8]);
 check('every seam stop is a real layout', api.SEAM_ORDER.every((l) => l in CMS), true);
 check('setLayout leaves the images alone', shape(api.setLayout([row('two-up', 'a', 'b')], 0, 'split-5-7')), [['split-5-7', ['a', 'b']]]);
 
+// 8b. The aspects above are a COPY of the site's CSS, and a copy can drift —
+//     that is exactly how previz came to show an uncropped full-width image
+//     while the site published it cropped to 16/7. When the website repo is
+//     checked out beside this one, read its CSS and compare for real.
+const SITE = new URL('../../allofitnow-website/frontend/src/components/project/ProjectPage.astro', import.meta.url);
+if (fs.existsSync(SITE)) {
+  const css = fs.readFileSync(SITE, 'utf8');
+  const drift = [];
+  for (const name of Object.keys(api.LAYOUTS)) {
+    for (let slot = 0; slot < api.slotsFor(name); slot++) {
+      const ours = api.aspectFor(name, slot);
+      if (!ours) continue;
+      // Single-slot rows are ".pp__gRow--<name> .pp__g {...}"; multi-slot rows
+      // qualify the slot as ".pp__g--slot<n>".
+      const row = '\\.pp__gRow--' + name.replace(/[-]/g, '\\-') + '\\s';
+      const tail = '\\s*\\{[^}]*aspect-ratio:\\s*([0-9]+\\s*/\\s*[0-9]+)';
+      // A multi-slot row may size each slot separately (split-8-4) or all of
+      // them with a single rule (two-up, three-up), so try the specific form
+      // first and fall back to the one that covers the whole row.
+      const perSlot = new RegExp(row + '*\\.pp__g--slot' + (slot + 1) + tail);
+      const whole = new RegExp(row + '*\\.pp__g' + tail);
+      const m = perSlot.exec(css) || whole.exec(css);
+      if (!m) {
+        drift.push(`${name} slot${slot + 1}: no aspect-ratio rule found on the site`);
+        continue;
+      }
+      const theirs = m[1].replace(/\s+/g, ' ').trim();
+      if (theirs !== ours) drift.push(`${name} slot${slot + 1}: composer "${ours}" vs site "${theirs}"`);
+    }
+  }
+  check('every aspect matches the live site CSS', drift, []);
+} else {
+  console.log('skip  site CSS cross-check (allofitnow-website not checked out beside this repo)');
+}
+
 // 9. The layout picker must only offer layouts that fit the row's image count.
-check('one image → only full', api.layoutsForCount(1), ['full']);
+check('one image → the four full-width heights', api.layoutsForCount(1).sort(), ['full', 'full-16-9', 'full-2-1', 'full-3-1']);
 check('two images → the three split ratios', api.layoutsForCount(2).sort(), ['split-5-7', 'split-8-4', 'two-up']);
 check('three images → only three-up', api.layoutsForCount(3), ['three-up']);
 

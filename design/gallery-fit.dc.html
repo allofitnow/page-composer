@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gallery fit — cover vs contain vs fit</title>
+<style>
+  /* Mirrors frontend/src/components/project/ProjectPage.astro: 12-column rows,
+     10px radius, object-fit: cover, and the five fixed slot ratios. The gap is
+     the one liberty — the site uses 80px at full page width, and these panels
+     are half that, so it is scaled to keep the proportion honest. */
+  :root { --gap: 40px; --cw: rgb(217, 225, 234); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; color: var(--cw);
+    font: 12px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .06em; }
+  .wrap { padding: 28px 32px 80px; max-width: 1900px; margin: 0 auto; }
+  h1 { font-size: 13px; letter-spacing: .22em; font-weight: 500; margin: 0 0 6px; }
+  .sub { color: #7b828c; margin: 0 0 26px; max-width: 90ch; line-height: 1.7; }
+  .sub b { color: var(--cw); font-weight: 500; }
+
+  .heads { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px;
+    position: sticky; top: 0; background: #000; padding: 10px 0 12px; z-index: 5;
+    border-bottom: 1px solid #1c1f24; }
+  .heads span { font-size: 10px; letter-spacing: .2em; color: #7b828c; }
+  .heads b { color: var(--cw); font-weight: 500; }
+
+  .case { padding: 26px 0 6px; border-bottom: 1px solid #14171b; }
+  .caseName { font-size: 10px; letter-spacing: .2em; color: #7b828c; margin-bottom: 12px; }
+  .caseName b { color: var(--cw); font-weight: 500; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; align-items: start; }
+
+  .row { display: grid; grid-template-columns: repeat(12, 1fr); gap: var(--gap); align-items: start; }
+  .cell { position: relative; overflow: hidden; border-radius: 10px; }
+  .cell img { width: 100%; height: 100%; display: block; object-fit: cover; }
+  /* The proposal: only images WIDER than their slot switch to contain. Everything
+     that already fits is untouched, which is most of the library. */
+  .contain .cell[data-wide="1"] img { object-fit: contain; }
+  /* Third option: the CELL takes the image's ratio, so there is no dead space
+     at all and cover has nothing left to crop. The row simply gets shorter. */
+
+  .loss { position: absolute; left: 8px; bottom: 8px; z-index: 2;
+    font-size: 9px; letter-spacing: .14em; padding: 3px 7px; border-radius: 3px;
+    background: rgba(0,0,0,.72); }
+  .loss.bad { color: #ff6b6b; }
+  .loss.ok  { color: #6bffb0; }
+  .tag { position: absolute; right: 8px; top: 8px; z-index: 2; font-size: 9px;
+    letter-spacing: .14em; color: #7b828c; background: rgba(0,0,0,.72); padding: 3px 7px; border-radius: 3px; }
+  .legend { margin-top: 30px; color: #7b828c; line-height: 1.8; }
+  .legend b { color: var(--cw); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>GALLERY FIT — THREE WAYS</h1>
+  <p class="sub">
+    <b>NOW</b> is the site as it stands: every slot is <b>object-fit: cover</b> against a fixed ratio, so
+    anything wider than its slot loses the sides.
+    <b>A</b> keeps the slot and letterboxes inside it — nothing is cropped, but the spare height is dead
+    space, and at these ratios that is 113–179px above <i>and</i> below, against an 80px gap between rows.
+    <b>B</b> gives the cell the image's own ratio instead: nothing cropped, nothing padded, the cell simply
+    ends up shorter than its neighbours. Rows already mix heights by design — split 8·4 pairs a 16/9 with a
+    bottom-aligned 1/1 — so a short cell is not foreign to the language.
+    Images that already fit are untouched in all three. Real media, real ratios, straight off the CMS.
+  </p>
+
+  <div class="heads">
+    <span>NOW — <b>COVER</b> (sides clipped)</span>
+    <span>A — <b>CONTAIN</b> (whole frame, dead space)</span>
+    <span>B — <b>FIT THE CELL</b> (whole frame, no dead space)</span>
+  </div>
+
+  <div id="cases"></div>
+
+  <div class="legend" id="legend"></div>
+</div>
+
+<script>
+const CMS = 'http://192.168.30.245/media/';
+// The five arrangements, exactly as ProjectPage.astro's CSS defines them.
+const LAYOUTS = {
+  'full':       [{ span: 12, ratio: 16/7 }],
+  'two-up':     [{ span: 6, ratio: 4/3 }, { span: 6, ratio: 4/3 }],
+  'split-8-4':  [{ span: 8, ratio: 16/9 }, { span: 4, ratio: 1/1, end: true }],
+  'split-5-7':  [{ span: 5, ratio: 4/3 }, { span: 7, ratio: 16/9, end: true }],
+  'three-up':   [{ span: 4, ratio: 4/3 }, { span: 4, ratio: 4/3 }, { span: 4, ratio: 4/3 }],
+};
+const LABEL = { 'full': 'FULL WIDTH · 16/7', 'two-up': 'TWO-UP · 4/3', 'split-8-4': 'SPLIT 8·4 · 16/9 + 1/1',
+                'split-5-7': 'SPLIT 5·7 · 4/3 + 16/9', 'three-up': 'THREE-UP · 4/3' };
+
+// Real assets, with their real dimensions from Payload.
+const WIDE   = { src: 'the-kid-laroi-a-perfect-world-tour_gallery01-1.webp', w: 2560, h: 711,  name: 'THE KID LAROI' };
+const MID    = { src: 'services-rtc_morganwallen_glass-1.webp',              w: 3666, h: 1364, name: 'MORGAN WALLEN' };
+const NORMAL = { src: 'services-sp_peso-dinastia_hero.webp',                 w: 8250, h: 3991, name: 'PESO DINASTIA' };
+
+function cell(asset, slot, mode) {
+  const r = asset.w / asset.h;
+  const wide = r > slot.ratio + 0.001;
+  const kept = Math.min(1, slot.ratio / r);
+  const lost = Math.round((1 - kept) * 100);
+
+  const el = document.createElement('div');
+  el.className = 'cell';
+  el.dataset.wide = wide ? '1' : '0';
+  el.style.gridColumn = `span ${slot.span}`;
+  // In 'fit' the cell adopts the image's own ratio, so nothing is cropped and
+  // nothing is padded — the cell just ends up shorter than its neighbours.
+  el.style.aspectRatio = (mode === 'fit' && wide) ? `${r}` : `${slot.ratio}`;
+  if (slot.end) el.style.alignSelf = 'end';
+
+  const img = document.createElement('img');
+  img.src = CMS + asset.src;
+  img.alt = '';
+  el.appendChild(img);
+
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.textContent = `${asset.name} · ${r.toFixed(2)}:1`;
+  el.appendChild(tag);
+
+  const loss = document.createElement('span');
+  const cropped = mode === 'now' && wide;
+  loss.className = 'loss ' + (cropped ? 'bad' : 'ok');
+  loss.textContent = cropped
+    ? `−${lost}% OF THE WIDTH CUT`
+    : !wide ? 'FITS — UNCHANGED'
+    : mode === 'fit' ? 'WHOLE FRAME · NO DEAD SPACE'
+    : `WHOLE FRAME · ${Math.round((1 - kept) * 100)}% DEAD SPACE`;
+  el.appendChild(loss);
+  return el;
+}
+
+const cases = document.getElementById('cases');
+let worst = 0;
+
+for (const [layout, slots] of Object.entries(LAYOUTS)) {
+  // Slot 1 gets the ultra-wide asset; the rest get progressively normal ones,
+  // so each row also shows that well-fitting images are left alone.
+  const assets = slots.map((_, i) => (i === 0 ? WIDE : i === 1 ? MID : NORMAL));
+
+  const box = document.createElement('div');
+  box.className = 'case';
+  const name = document.createElement('div');
+  name.className = 'caseName';
+  name.innerHTML = `<b>${LABEL[layout]}</b>`;
+  box.appendChild(name);
+
+  const pair = document.createElement('div');
+  pair.className = 'pair';
+  for (const mode of ['now', 'contain', 'fit']) {
+    const row = document.createElement('div');
+    row.className = 'row ' + (mode === 'contain' ? 'contain' : '');
+    slots.forEach((slot, i) => {
+      const a = assets[i];
+      if (mode === 'now') {
+        const r = a.w / a.h;
+        if (r > slot.ratio) worst = Math.max(worst, Math.round((1 - slot.ratio / r) * 100));
+      }
+      row.appendChild(cell(a, slot, mode));
+    });
+    pair.appendChild(row);
+  }
+  box.appendChild(pair);
+  cases.appendChild(box);
+}
+
+document.getElementById('legend').innerHTML =
+  `<b>Worst case in this set: −${worst}% of the image width discarded.</b><br>` +
+  'Videos behave identically — <b>object-fit</b> applies to &lt;video&gt; the same way, so an ultra-wide render loses its sides too.<br>' +
+  'On mobile the site overrides every slot to <b>16/9</b> full width, so the same clipping happens there regardless of layout.<br>' +
+  'The change is frontend-only: Payload already stores <b>width</b> and <b>height</b> on every media doc — the mapper currently discards them.';
+</script>
+</body>
+</html>

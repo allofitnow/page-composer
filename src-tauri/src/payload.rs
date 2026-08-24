@@ -34,7 +34,16 @@ pub fn trace(what: &str) {
 
 /// The layouts the Projects collection accepts. Anything else is rejected by
 /// Payload's select validation, so the composer never invents one.
-const LAYOUTS: [&str; 5] = ["full", "two-up", "split-8-4", "split-5-7", "three-up"];
+const LAYOUTS: [&str; 8] = [
+    "full",
+    "full-16-9",
+    "full-2-1",
+    "full-3-1",
+    "two-up",
+    "split-8-4",
+    "split-5-7",
+    "three-up",
+];
 
 /// Credentials entered through the sign-in modal, held in memory for this run
 /// only. They take precedence over config.json/env so signing in as someone

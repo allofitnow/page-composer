@@ -57,7 +57,13 @@ const bytes = (n) =>
 // frontend/src/components/project/ProjectPage.astro on `integration`.
 const COLS = 12;
 const LAYOUTS = {
-  full: { slots: 1, spans: [12], aspects: [null], label: 'FULL WIDTH' },
+  // Four full-width heights. The aspects here must match ProjectPage.astro's
+  // CSS exactly or previz lies about what will publish — `full` used to be
+  // `null` here while the site cropped it to 16/7, which is precisely the trap.
+  'full-16-9': { slots: 1, spans: [12], aspects: ['16 / 9'], label: 'FULL 16:9' },
+  'full-2-1': { slots: 1, spans: [12], aspects: ['2 / 1'], label: 'FULL 2:1' },
+  full: { slots: 1, spans: [12], aspects: ['16 / 7'], label: 'FULL 16:7' },
+  'full-3-1': { slots: 1, spans: [12], aspects: ['3 / 1'], label: 'FULL 3:1' },
   'two-up': { slots: 2, spans: [6, 6], aspects: ['4 / 3', '4 / 3'], label: 'TWO-UP' },
   'split-8-4': { slots: 2, spans: [8, 4], aspects: ['16 / 9', '1 / 1'], alignEnd: [false, true], label: 'SPLIT 8·4' },
   'split-5-7': { slots: 2, spans: [5, 7], aspects: ['4 / 3', '16 / 9'], alignEnd: [false, true], label: 'SPLIT 5·7' },
@@ -71,7 +77,7 @@ const DEFAULT_LAYOUT = 'full';
 const SEAM_ORDER = ['split-5-7', 'two-up', 'split-8-4'];
 
 // Which layout to grow into when a row gains an image.
-const GROW = { full: 'two-up', 'two-up': 'three-up', 'split-8-4': 'three-up', 'split-5-7': 'three-up' };
+const GROW = { full: 'two-up', 'full-16-9': 'two-up', 'full-2-1': 'two-up', 'full-3-1': 'two-up', 'two-up': 'three-up', 'split-8-4': 'three-up', 'split-5-7': 'three-up' };
 // ...and shrink into when it loses one.
 const SHRINK = { 'three-up': 'two-up', 'two-up': 'full', 'split-8-4': 'full', 'split-5-7': 'full' };
 
