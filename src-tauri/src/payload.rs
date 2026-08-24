@@ -34,11 +34,13 @@ pub fn trace(what: &str) {
 
 /// The layouts the Projects collection accepts. Anything else is rejected by
 /// Payload's select validation, so the composer never invents one.
-const LAYOUTS: [&str; 8] = [
+const LAYOUTS: [&str; 10] = [
     "full",
     "full-16-9",
     "full-2-1",
     "full-3-1",
+    "full-19-5",
+    "full-27-4",
     "two-up",
     "split-8-4",
     "split-5-7",

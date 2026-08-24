@@ -51,7 +51,7 @@
   <p class="sub">
     One full-width row, rendered at the site's real proportions, in each candidate ratio.
     Everything is <b>object-fit: cover</b> exactly as the site does it today, so what you see is what
-    would publish. Pick an asset to push through all four.
+    would publish. Pick an asset to push through all six.
     <b>16/7 is what `full` is today</b> — the others are the proposal.
   </p>
 
@@ -74,6 +74,8 @@ const RATIOS = [
   { name: '2/1',  v: 2 },
   { name: '16/7', v: 16 / 7, current: true },
   { name: '3/1',  v: 3 },
+  { name: '3.8:1 (19/5)', v: 19 / 5 },
+  { name: '27:4 (6.75:1)', v: 27 / 4 },
 ];
 
 const ASSETS = [
@@ -89,6 +91,8 @@ const DIST = [
   { name: '2/1',               fit: 5,  sides: 4,  tb: 116, waste: '11%' },
   { name: '16/7 (current)',    fit: 0,  sides: 3,  tb: 122, waste: '22%' },
   { name: '3/1',               fit: 0,  sides: 1,  tb: 124, waste: '41%' },
+  { name: '3.8:1 (19/5)',      fit: 0,  sides: 0,  tb: 125, waste: '53%' },
+  { name: '27:4 (6.75:1)',     fit: 0,  sides: 0,  tb: 125, waste: '74%' },
 ];
 
 let chosen = 0;

@@ -59,6 +59,8 @@ const CMS = {
   'full-16-9': [12],
   'full-2-1': [12],
   'full-3-1': [12],
+  'full-19-5': [12],
+  'full-27-4': [12],
 };
 check('layout set matches the CMS exactly', Object.keys(api.LAYOUTS).sort(), Object.keys(CMS).sort());
 for (const [name, spans] of Object.entries(CMS)) {
@@ -73,12 +75,14 @@ check('split-5-7 is 4:3 then 16:9', [api.aspectFor('split-5-7', 0), api.aspectFo
 // Every full-width height, and these MUST equal the CSS in ProjectPage.astro.
 // `full` used to be null here while the site cropped it to 16/7, so previz
 // showed an uncropped image and the site published a cropped one.
-check('the four full-width heights match the site', [
+check('every full-width height matches the site', [
   api.aspectFor('full-16-9', 0),
   api.aspectFor('full-2-1', 0),
   api.aspectFor('full', 0),
   api.aspectFor('full-3-1', 0),
-], ['16 / 9', '2 / 1', '16 / 7', '3 / 1']);
+  api.aspectFor('full-19-5', 0),
+  api.aspectFor('full-27-4', 0),
+], ['16 / 9', '2 / 1', '16 / 7', '3 / 1', '19 / 5', '27 / 4']);
 check('the wide-right slot sits on the baseline', [api.alignEndFor('split-8-4', 1), api.alignEndFor('split-5-7', 1)], [true, true]);
 check('the left slot never does', [api.alignEndFor('split-8-4', 0), api.alignEndFor('two-up', 1)], [false, false]);
 
@@ -214,7 +218,7 @@ if (fs.existsSync(SITE)) {
 }
 
 // 9. The layout picker must only offer layouts that fit the row's image count.
-check('one image → the four full-width heights', api.layoutsForCount(1).sort(), ['full', 'full-16-9', 'full-2-1', 'full-3-1']);
+check('one image → every full-width height', api.layoutsForCount(1).sort(), ['full', 'full-16-9', 'full-19-5', 'full-2-1', 'full-27-4', 'full-3-1']);
 check('two images → the three split ratios', api.layoutsForCount(2).sort(), ['split-5-7', 'split-8-4', 'two-up']);
 check('three images → only three-up', api.layoutsForCount(3), ['three-up']);
 
