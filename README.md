@@ -124,6 +124,19 @@ npm start
 
 Credentials sourced from the environment are never written to `config.json`.
 
+### Verifying a publish landed
+
+Publishing omits an empty field rather than blanking it, so a field that failed
+to parse looks identical to one nobody touched. Read it back:
+
+```bash
+node design/verify-published.mjs renee-rapp
+```
+
+It prints every field, flags the empty ones, and checks the rendered
+`/work/<slug>/` page actually exists — which only happens if Payload's
+afterChange hook fired and Astro rebuilt.
+
 ## What the CMS expects
 
 Nothing needs deploying to `.245` for this — the layout model was already live
