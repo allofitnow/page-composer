@@ -43,6 +43,7 @@ export const rpc = isTauri
       status: () => invoke('get_status'),
       listProjects: () => invoke('list_projects'),
       getProject: (id) => invoke('get_project', { id }),
+      mergeIds: (ids) => invoke('merge_project_ids', { ids }),
       getSettings: () => invoke('get_settings'),
       saveSettings: ({ roots, payloadUrl }) => invoke('save_settings', { roots, payloadUrl }),
       browse: (path) => invoke('browse_dir', { path }),
@@ -58,6 +59,7 @@ export const rpc = isTauri
       status: () => http('/api/status'),
       listProjects: () => http('/api/projects'),
       getProject: (id) => http(`/api/project/${id}`),
+      mergeIds: (ids) => httpPost('/api/merge', { ids }).then((r) => r.id),
       getSettings: () => http('/api/settings'),
       saveSettings: ({ roots, payloadUrl }) => httpPost('/api/settings', { roots, payloadUrl }),
       browse: (path) => http(`/api/browse?${q({ path })}`),
@@ -119,6 +121,30 @@ export function onPublishProgress(handler) {
   if (!isTauri) return () => {};
   const unlisten = T.event.listen('publish://progress', (e) => handler(e.payload));
   return () => unlisten.then((f) => f()).catch(() => {});
+}
+
+/**
+ * A desktop notification, for the end of something long enough that nobody
+ * watched it. Best-effort by design: a denied permission, a browser without the
+ * API, or a locked-down desktop must never break the thing it is reporting on,
+ * so every failure path is swallowed and the in-app toast still stands on its
+ * own.
+ */
+export async function notify(title, body) {
+  try {
+    if (isTauri) {
+      let granted = await invoke('plugin:notification|is_permission_granted');
+      if (!granted) granted = (await invoke('plugin:notification|request_permission')) === 'granted';
+      if (granted) await invoke('plugin:notification|notify', { options: { title, body } });
+      return;
+    }
+    if (typeof Notification === 'undefined') return;
+    let perm = Notification.permission;
+    if (perm === 'default') perm = await Notification.requestPermission();
+    if (perm === 'granted') new Notification(title, { body });
+  } catch {
+    /* the toast already said it; a notification is a courtesy */
+  }
 }
 
 /**

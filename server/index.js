@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import { config, roots, ROOT_DIR, applyRoots, saveConfig, saveCredentials, reachable } from './config.js';
-import { listProjects, getProject, invalidateAll } from './scan.js';
+import { listProjects, getProject, invalidateAll, decodeId, resolveRel, mergeIds } from './scan.js';
 import { thumbnail } from './thumbs.js';
 import { ffmpegStatus } from './ffmpeg.js';
 import { parseCopyDoc, validate, TAXONOMY } from './copydoc.js';
@@ -70,6 +70,7 @@ app.get('/api/browse', wrap((req, res) => {
 
 app.get('/api/projects', wrap((_req, res) => res.json(listProjects())));
 
+app.post('/api/merge', wrap((req, res) => res.json({ id: mergeIds(req.body.ids || []) })));
 app.get('/api/project/:id', wrap((req, res) => res.json(getProject(req.params.id))));
 
 app.get('/api/thumb/:id', wrap(async (req, res) => {
@@ -81,7 +82,7 @@ app.get('/api/thumb/:id', wrap(async (req, res) => {
       : project.assets.find((a) => a.rel === req.query.rel);
   if (!asset) return res.status(404).end();
   const width = Math.min(Number(req.query.w) || 420, 1800);
-  const file = await thumbnail(safeJoin(project.dir, asset.rel), asset.kind, width);
+  const file = await thumbnail(resolveRel(decodeId(req.params.id), asset.rel), asset.kind, width);
   res.setHeader('Cache-Control', 'public, max-age=86400');
   // The cache lives in `.cache`, and send() 404s any path with a dot-segment
   // unless dotfiles are allowed explicitly.
@@ -94,7 +95,7 @@ app.get('/api/copy/:id', wrap(async (req, res) => {
   const project = getProject(req.params.id);
   const rel = req.query.rel || project.docs[0]?.rel;
   if (!rel) return res.json({ file: null, fields: null, blocks: [], validation: null });
-  const parsed = await parseCopyDoc(safeJoin(project.dir, rel), await serviceCategories());
+  const parsed = await parseCopyDoc(resolveRel(decodeId(req.params.id), rel), await serviceCategories());
   res.json({ ...parsed, rel, validation: validate(parsed.fields) });
 }));
 

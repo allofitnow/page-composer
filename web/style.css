@@ -285,6 +285,10 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .rows { display: flex; flex-direction: column; }
 
 /* Drop here to move a tile between rows rather than split one. */
+/* Rows chosen to compose one page together. Inset rather than a border so the
+   row does not change size and the table stays aligned while picking. */
+.prow[data-picked] { box-shadow: inset 2px 0 0 var(--cw); }
+
 .rowgap { height: 10px; flex: 0 0 auto; position: relative; }
 /* The seam is a 10px gap, which is not a target anyone can hit mid-drag. It
    must NOT be opened up to fix that: growing it on dragstart moved every row

@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import sharp from 'sharp';
 import { config } from './config.js';
-import { getProject, invalidate } from './scan.js';
+import { getProject, invalidate, decodeId, resolveRel } from './scan.js';
 import { buildName, safeJoin } from './util.js';
 import { ffmpeg, probe } from './ffmpeg.js';
 
@@ -40,7 +40,7 @@ export function plan({ project, base, items, outDir }) {
       row: it.row ?? null,
       slot: it.slot ?? null,
       kind: asset.kind,
-      source: safeJoin(project.dir, it.rel),
+      source: resolveRel(decodeId(project.id), it.rel),
       sourceName: asset.name,
       bytesIn: asset.size,
       output,

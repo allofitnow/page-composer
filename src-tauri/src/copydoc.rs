@@ -8,7 +8,7 @@
 
 use crate::config::Config;
 use crate::scan;
-use crate::util::{safe_join, slugify};
+use crate::util::slugify;
 use crate::AppState;
 use anyhow::{anyhow, Result};
 use quick_xml::events::Event;
@@ -975,7 +975,8 @@ pub async fn read_copy_doc(
         .or_else(|| project.docs.first().map(|d| d.rel.clone()));
     let Some(chosen) = chosen else { return Ok(None) };
 
-    let path = safe_join(Path::new(&project.dir), &chosen).map_err(|e| e.to_string())?;
+    let d = scan::decode_id(&cfg, &id).map_err(|e| e.to_string())?;
+    let path = d.resolve(&chosen).map_err(|e| e.to_string())?;
     // The services cell has no delimiter once Google Docs exports it, so the
     // parser is handed the CMS list to split it against.
     let services: Vec<String> = crate::payload::service_categories(&cfg)

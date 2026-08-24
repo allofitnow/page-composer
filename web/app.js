@@ -2,7 +2,7 @@
 // One state object, one render pass per change. Text inputs commit on `change`
 // (blur/enter) rather than `input`, so re-rendering never eats a keystroke.
 
-import { rpc, thumbImg, onComposeProgress, onPublishProgress, pickFolder, openExternal, isTauri } from '/transport.js';
+import { rpc, thumbImg, onComposeProgress, onPublishProgress, notify, pickFolder, openExternal, isTauri } from '/transport.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -187,6 +187,9 @@ const state = {
   rootFilter: null,
   search: '',
   selectedProjectId: null,
+  // Ordered, because the first folder picked is the primary: it names the page
+  // and receives the composed output. Shift/ctrl-click builds it up.
+  pickedIds: [],
   project: null,
   kindFilter: 'all',
   dirFilter: null,
@@ -841,9 +844,11 @@ function screenPick() {
               h(
                 'button.prow',
                 {
-                  'aria-selected': String(sel?.id === p.id),
-                  onClick: () => set({ selectedProjectId: p.id }),
-                  onDblclick: () => openProject(p.id),
+                  'aria-selected': String(sel?.id === p.id || state.pickedIds.includes(p.id)),
+                  'data-picked': state.pickedIds.length > 1 && state.pickedIds.includes(p.id) ? String(state.pickedIds.indexOf(p.id) + 1) : null,
+                  title: 'Shift or Ctrl-click to build a page from more than one folder',
+                  onClick: (e) => pickProject(p.id, list, e),
+                  onDblclick: () => openPicked([p.id]),
                 },
                 h('span.m', { style: { fontSize: '11px', letterSpacing: '0.12em' } }, p.jobCode || '—'),
                 h('span.prow__name.trunc', {}, p.title),
@@ -896,11 +901,64 @@ function screenPick() {
               )
             ),
             h('div.grow'),
-            h('button.btn', { onClick: () => openProject(sel.id) }, 'OPEN IN COMPOSER'),
+            state.pickedIds.length > 1
+              ? h(
+                  'span.m.dimmer',
+                  { style: { fontSize: '9px', letterSpacing: '0.14em', lineHeight: 1.6 } },
+                  `${state.pickedIds.length} FOLDERS \u00b7 ${(state.projects.find((x) => x.id === state.pickedIds[0])?.folder || '').toUpperCase()} IS PRIMARY`
+                )
+              : null,
+            h(
+              'button.btn',
+              { onClick: () => openPicked(state.pickedIds.length ? state.pickedIds : [sel.id]) },
+              state.pickedIds.length > 1 ? `OPEN ${state.pickedIds.length} FOLDERS TOGETHER` : 'OPEN IN COMPOSER'
+            ),
           ]
         : h('div.empty', {}, 'Nothing selected')
     )
   );
+}
+
+/**
+ * Click selects; shift extends a range; ctrl/cmd toggles one. The order is
+ * kept because the first folder picked is the primary — it names the page and
+ * receives the composed output, so "which one did I click first" is meaningful
+ * rather than incidental.
+ */
+function pickProject(id, list, e) {
+  if (e.shiftKey && state.pickedIds.length) {
+    const anchor = list.findIndex((p) => p.id === state.pickedIds[0]);
+    const to = list.findIndex((p) => p.id === id);
+    if (anchor >= 0 && to >= 0) {
+      const [a, b] = anchor <= to ? [anchor, to] : [to, anchor];
+      const span = list.slice(a, b + 1).map((p) => p.id);
+      // The anchor stays first whichever direction the range was dragged.
+      const primary = list[anchor].id;
+      set({ pickedIds: [primary, ...span.filter((x) => x !== primary)], selectedProjectId: id });
+      return;
+    }
+  }
+  if (e.ctrlKey || e.metaKey) {
+    const next = state.pickedIds.includes(id)
+      ? state.pickedIds.filter((x) => x !== id)
+      : [...(state.pickedIds.length ? state.pickedIds : [state.selectedProjectId].filter(Boolean)), id];
+    set({ pickedIds: next, selectedProjectId: id });
+    return;
+  }
+  set({ pickedIds: [], selectedProjectId: id });
+}
+
+/** One folder or several — several are merged into a single composite id. */
+async function openPicked(ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return;
+  if (unique.length === 1) return openProject(unique[0]);
+  try {
+    const merged = await withLoading('MERGING FOLDERS', `${unique.length} SOURCES`, () => rpc.mergeIds(unique), { inline: true });
+    await openProject(merged);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 async function openProject(id) {
@@ -2318,11 +2376,17 @@ async function runPublish() {
     const res = await rpc.publish({ fields: state.fields, manifestPath: state.manifestPath });
     finish();
     set({ publishing: false, publishResult: res });
-    toast(`Published ${res.slug} — ${res.mediaCount} media, rebuild queued`);
+    // The toast only exists while this window is in front, and a publish runs
+    // long enough that nobody watches it land.
+    const summary = `${res.slug} — ${res.mediaCount} media, rebuild queued`;
+    toast(`Published ${summary}`);
+    notify('Published to the CMS', summary);
   } catch (err) {
     finish();
     set({ publishing: false });
     toast(err.message, 'error');
+    // A failure you walked away from is worth knowing about just as much.
+    notify('Publish failed', err.message);
   }
 }
 

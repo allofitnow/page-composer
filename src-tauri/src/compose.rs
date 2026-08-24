@@ -70,7 +70,9 @@ fn resolve_out_dir(project_dir: &Path, out_dir: &Option<String>) -> Result<PathB
 /// (and catch collisions) before a single byte is written.
 fn plan(cfg: &Config, project_id: &str, base: &str, items: &[Item], out_dir: &Path) -> Result<Vec<Step>> {
     let project = scan::get_project(cfg, project_id)?;
-    let dir = PathBuf::from(&project.dir);
+    // Sources, not one directory: a page may draw assets from several folders,
+    // and each rel knows which one it came from.
+    let decoded = scan::decode_id(cfg, project_id)?;
 
     let described: Vec<(String, &Item)> = items
         .iter()
@@ -115,7 +117,7 @@ fn plan(cfg: &Config, project_id: &str, base: &str, items: &[Item], out_dir: &Pa
             row: it.row,
             slot: it.slot,
             kind: asset.kind,
-            source: safe_join(&dir, &asset.rel)?.to_string_lossy().to_string(),
+            source: decoded.resolve(&asset.rel)?.to_string_lossy().to_string(),
             source_name: asset.name.clone(),
             bytes_in: asset.size,
             bytes_out: 0,

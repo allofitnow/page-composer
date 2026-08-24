@@ -240,14 +240,29 @@ async fn upload_media(
     jwt: &str,
     file: &Path,
     alt: &str,
-) -> Result<(String, bool, String)> {
+) -> Result<(String, &'static str, String)> {
     let name = file
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .ok_or_else(|| anyhow!("bad media path"))?;
 
+    let local_size = std::fs::metadata(file)?.len();
+
     // Payload keeps filenames unique, so a re-publish would otherwise pile up
     // `-1` copies of the same asset.
+    //
+    // But matching on the NAME alone was wrong, and quietly so. Output names are
+    // positional -- `..._gallery02.webp` is whatever sits second in the rail --
+    // so re-composing a different image, or merely reordering the carousel,
+    // produces the same filenames holding different pictures. Reusing on the
+    // name meant the CMS kept serving the old file and the page never changed;
+    // reordering actively published the WRONG images under the right names.
+    //
+    // Size is the discriminator: a re-encode of the same source at the same
+    // settings is byte-identical, and any other picture differs. When it does
+    // differ the file on the existing doc is replaced rather than a new doc
+    // created, so the media id stays stable and nothing referencing it breaks.
+    let mut existing: Option<String> = None;
     let found = client
         .get(api(cfg, &format!("/media?where[filename][equals]={}&limit=1", urlencode(&name))))
         .header("Authorization", format!("JWT {jwt}"))
@@ -257,7 +272,11 @@ async fn upload_media(
         let body: Value = found.json().await?;
         if body.get("totalDocs").and_then(|v| v.as_u64()).unwrap_or(0) > 0 {
             if let Some(id) = body["docs"][0]["id"].as_str() {
-                return Ok((id.to_string(), true, name));
+                let remote_size = body["docs"][0]["filesize"].as_u64();
+                if remote_size == Some(local_size) {
+                    return Ok((id.to_string(), "reused", name));
+                }
+                existing = Some(id.to_string());
             }
         }
     }
@@ -270,21 +289,38 @@ async fn upload_media(
         .text("alt", alt.to_string())
         .part("file", part);
 
-    let res = client
-        .post(api(cfg, "/media"))
-        .header("Authorization", format!("JWT {jwt}"))
-        .multipart(form)
-        .send()
-        .await?;
+    // Replacing in place keeps the id, so every project already pointing at this
+    // media doc picks the new file up too.
+    let res = match &existing {
+        Some(id) => {
+            client
+                .patch(api(cfg, &format!("/media/{id}")))
+                .header("Authorization", format!("JWT {jwt}"))
+                .multipart(form)
+                .send()
+                .await?
+        }
+        None => {
+            client
+                .post(api(cfg, "/media"))
+                .header("Authorization", format!("JWT {jwt}"))
+                .multipart(form)
+                .send()
+                .await?
+        }
+    };
     if !res.status().is_success() {
         bail!("upload {name} failed: {} {}", res.status(), res.text().await.unwrap_or_default());
+    }
+    if let Some(id) = existing {
+        return Ok((id, "replaced", name));
     }
     let body: Value = res.json().await?;
     let id = body["doc"]["id"]
         .as_str()
         .ok_or_else(|| anyhow!("upload {name}: no id in response"))?
         .to_string();
-    Ok((id, false, name))
+    Ok((id, "uploaded", name))
 }
 
 fn urlencode(s: &str) -> String {
@@ -449,7 +485,7 @@ async fn run_publish(
         let file = Path::new(&out_dir).join(output);
 
         say(app, &mut messages, format!("uploading {output}"));
-        let (id, reused, name) = upload_media(
+        let (id, action, name) = upload_media(
             &client,
             cfg,
             &jwt,
@@ -457,7 +493,7 @@ async fn run_publish(
             &format!("{title} — {}", item["description"].as_str().unwrap_or("asset")),
         )
         .await?;
-        say(app, &mut messages, format!("{} {name}", if reused { "reused" } else { "uploaded" }));
+        say(app, &mut messages, format!("{action} {name}"));
 
         match role {
             // The collection has ONE key image, used as both the work-grid

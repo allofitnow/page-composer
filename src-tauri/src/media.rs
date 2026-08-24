@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::scan;
-use crate::util::{safe_join, Kind};
+use crate::util::Kind;
 use crate::AppState;
 use anyhow::{anyhow, bail, Result};
 use serde::Serialize;
@@ -236,14 +236,16 @@ pub async fn thumbnail(
             .find(|a| a.kind == Kind::Image)
             .or_else(|| project.assets.first())
             .ok_or_else(|| "project has no assets".to_string())?;
+        let d = scan::decode_id(&cfg, &id).map_err(|e| e.to_string())?;
         (
-            safe_join(Path::new(&project.dir), &asset.rel).map_err(|e| e.to_string())?,
+            d.resolve(&asset.rel).map_err(|e| e.to_string())?,
             asset.kind,
             asset.mtime,
         )
     } else {
         let d = scan::decode_id(&cfg, &id).map_err(|e| e.to_string())?;
-        let source = safe_join(&d.dir, &rel).map_err(|e| e.to_string())?;
+        // Goes through the source list: a rel may name a secondary folder.
+        let source = d.resolve(&rel).map_err(|e| e.to_string())?;
         let kind = crate::util::kind_of(&rel).ok_or_else(|| format!("not a media file: {rel}"))?;
         let meta = std::fs::metadata(&source).map_err(|e| format!("{rel}: {e}"))?;
         let mtime = meta

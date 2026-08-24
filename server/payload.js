@@ -87,19 +87,38 @@ async function uploadMedia(jwt, file, alt) {
   const name = path.basename(file);
   const auth = { Authorization: `JWT ${jwt}` };
 
+  const localSize = fs.statSync(file).size;
+
   // Payload keeps filenames unique, so a re-publish would pile up `-1` copies.
+  //
+  // But matching on the NAME alone was wrong, and quietly so. Output names are
+  // positional — `..._gallery02.webp` is whatever sits second in the rail — so
+  // re-composing a different image, or merely reordering the carousel, produces
+  // the same filenames holding different pictures. Reusing on the name meant the
+  // CMS kept serving the old file; reordering published the WRONG images under
+  // the right names. Size is the discriminator: a re-encode of the same source
+  // at the same settings is byte-identical, anything else differs.
+  let existing = null;
   const found = await fetch(api(`/media?where[filename][equals]=${encodeURIComponent(name)}&limit=1`), { headers: auth });
   if (found.ok) {
     const j = await found.json();
-    if (j.totalDocs > 0) return { id: j.docs[0].id, reused: true, filename: name };
+    if (j.totalDocs > 0) {
+      if (j.docs[0].filesize === localSize) return { id: j.docs[0].id, reused: true, filename: name };
+      existing = j.docs[0].id;
+    }
   }
 
   const fd = new FormData();
   fd.set('alt', alt || name);
   fd.set('file', new File([fs.readFileSync(file)], name, { type: MIME[path.extname(name).toLowerCase()] || 'application/octet-stream' }));
 
-  const res = await fetch(api('/media'), { method: 'POST', headers: auth, body: fd });
+  // Replacing in place keeps the id, so every project already pointing at this
+  // media doc picks the new file up too.
+  const res = existing
+    ? await fetch(api(`/media/${existing}`), { method: 'PATCH', headers: auth, body: fd })
+    : await fetch(api('/media'), { method: 'POST', headers: auth, body: fd });
   if (!res.ok) throw new Error(`upload ${name} failed: ${res.status} ${await res.text()}`);
+  if (existing) return { id: existing, reused: false, filename: name, replaced: true };
   return { id: (await res.json()).doc.id, reused: false, filename: name };
 }
 

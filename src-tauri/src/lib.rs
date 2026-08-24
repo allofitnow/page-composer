@@ -130,6 +130,14 @@ fn list_projects(state: State<'_, AppState>) -> CmdResult<Vec<ProjectSummary>> {
     Ok(scan::list_projects(&cfg))
 }
 
+/// Several picked folders as one project id. Kept on the backend because the
+/// id is base64 of UTF-8 text, and getting that wrong in the browser would
+/// break exactly the folder names with accents that nobody tests with.
+#[tauri::command]
+fn merge_project_ids(ids: Vec<String>) -> CmdResult<String> {
+    scan::merge_ids(&ids).map_err(err)
+}
+
 #[tauri::command]
 fn get_project(state: State<'_, AppState>, id: String) -> CmdResult<Project> {
     let cfg = state.config.lock().map_err(err)?;
@@ -141,6 +149,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // A publish takes minutes on a tour's worth of video, so nobody watches
+        // it finish -- they switch away and come back to guess whether it
+        // worked. The toast only exists while the window is in front.
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -168,6 +180,7 @@ pub fn run() {
             browse_dir,
             list_projects,
             get_project,
+            merge_project_ids,
             media::thumbnail,
             copydoc::read_copy_doc,
             copydoc::validate_fields,

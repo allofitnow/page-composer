@@ -16,15 +16,78 @@ use walkdir::WalkDir;
 /// Node implementation so the same front end works against either backend.
 const SEP: char = '\u{0}';
 
+/// A page can be built from more than one project folder - a tour whose stills
+/// are on the NAS and whose renders are on another drive. The id carries the
+/// whole list, so nothing downstream needs a new argument and a single-folder
+/// id stays byte-for-byte what it always was. Primary source first: it names
+/// the page and receives the composed output.
+const REC: char = '\u{1}';
+
 pub fn encode_id(root_label: &str, folder: &str) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD
         .encode(format!("{root_label}{SEP}{folder}"))
+}
+
+/// Several project ids as one. Order matters; the first is the primary.
+pub fn merge_ids(ids: &[String]) -> Result<String> {
+    if ids.is_empty() {
+        return Err(anyhow!("no projects given"));
+    }
+    let mut parts = Vec::new();
+    for id in ids {
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(id)
+            .map_err(|_| anyhow!("unknown project id"))?;
+        parts.push(String::from_utf8(bytes).map_err(|_| anyhow!("unknown project id"))?);
+    }
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(parts.join(&REC.to_string())))
+}
+
+#[derive(Clone)]
+pub struct Source {
+    pub root: Root,
+    pub folder: String,
+    pub dir: PathBuf,
 }
 
 pub struct Decoded {
     pub root: Root,
     pub folder: String,
     pub dir: PathBuf,
+    pub sources: Vec<Source>,
+}
+
+impl Decoded {
+    /// Assets from a secondary folder carry an `@N/` prefix naming their
+    /// source, so one flat `rel` stays unambiguous across folders that may hold
+    /// identically named files. Source 0 is never prefixed, which is what keeps
+    /// selections saved before any of this existed still resolving.
+    pub fn resolve(&self, rel: &str) -> Result<PathBuf> {
+        let (idx, tail) = split_source(rel);
+        let src = self
+            .sources
+            .get(idx)
+            .ok_or_else(|| anyhow!("no such source in this project: {rel}"))?;
+        crate::util::safe_join(&src.dir, tail)
+    }
+}
+
+/// `@1/photos/x.jpg` -> (1, "photos/x.jpg"). Anything else belongs to source 0,
+/// including a filename that merely starts with an @.
+fn split_source(rel: &str) -> (usize, &str) {
+    rel.strip_prefix('@')
+        .and_then(|rest| rest.split_once('/'))
+        .and_then(|(n, tail)| n.parse::<usize>().ok().map(|n| (n, tail)))
+        .unwrap_or((0, rel))
+}
+
+/// The prefix assets from source `i` carry.
+pub fn prefix_for(i: usize) -> String {
+    if i == 0 {
+        String::new()
+    } else {
+        format!("@{i}/")
+    }
 }
 
 pub fn decode_id(cfg: &Config, id: &str) -> Result<Decoded> {
@@ -32,19 +95,30 @@ pub fn decode_id(cfg: &Config, id: &str) -> Result<Decoded> {
         .decode(id)
         .map_err(|_| anyhow!("unknown project id"))?;
     let decoded = String::from_utf8(bytes).map_err(|_| anyhow!("unknown project id"))?;
-    let (label, folder) = decoded
-        .split_once(SEP)
-        .ok_or_else(|| anyhow!("unknown project id"))?;
-    let root = cfg
-        .find_root(label)
-        .ok_or_else(|| anyhow!("unknown project root: {label}"))?;
-    if folder.is_empty() {
-        return Err(anyhow!("unknown project id"));
+
+    let mut sources = Vec::new();
+    for part in decoded.split(REC) {
+        let (label, folder) = part
+            .split_once(SEP)
+            .ok_or_else(|| anyhow!("unknown project id"))?;
+        let root = cfg
+            .find_root(label)
+            .ok_or_else(|| anyhow!("unknown project root: {label}"))?;
+        if folder.is_empty() {
+            return Err(anyhow!("unknown project id"));
+        }
+        sources.push(Source {
+            dir: Path::new(&root.path).join(folder),
+            folder: folder.to_string(),
+            root,
+        });
     }
+    let first = sources[0].clone();
     Ok(Decoded {
-        dir: Path::new(&root.path).join(folder),
-        root,
-        folder: folder.to_string(),
+        root: first.root,
+        folder: first.folder,
+        dir: first.dir,
+        sources,
     })
 }
 
@@ -53,6 +127,10 @@ pub struct Asset {
     pub rel: String,
     pub name: String,
     pub dir: String,
+    /// Index into the project's `sources`. 0 unless the page is built from
+    /// more than one folder.
+    #[serde(default)]
+    pub source: usize,
     pub kind: Kind,
     pub size: u64,
     pub mtime: f64,
@@ -92,8 +170,18 @@ pub struct Project {
     pub slug: String,
     pub title: String,
     pub tree: Vec<TreeNode>,
+    /// The folders this page is built from, primary first.
+    pub sources: Vec<SourceInfo>,
     pub assets: Vec<Asset>,
     pub docs: Vec<Asset>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceInfo {
+    pub index: usize,
+    pub root: String,
+    pub folder: String,
+    pub dir: String,
 }
 
 #[derive(Clone)]
@@ -166,6 +254,7 @@ fn walk(dir: &Path) -> Scanned {
             rel,
             name,
             dir: parent,
+            source: 0,
             kind,
             size: meta.len(),
             mtime: mtime_ms(&meta),
@@ -252,8 +341,28 @@ pub fn list_projects(cfg: &Config) -> Vec<ProjectSummary> {
 
 pub fn get_project(cfg: &Config, id: &str) -> Result<Project> {
     let d = decode_id(cfg, id)?;
-    let scanned = scan_project(&d.dir);
     let parsed = parse_folder_name(&d.folder);
+
+    // Every source folder contributes; only the primary names the page.
+    let mut assets: Vec<Asset> = Vec::new();
+    let mut docs: Vec<Asset> = Vec::new();
+    for (i, src) in d.sources.iter().enumerate() {
+        let scanned = scan_project(&src.dir);
+        let at = prefix_for(i);
+        assets.extend(scanned.assets.into_iter().map(|mut a| {
+            a.rel = format!("{at}{}", a.rel);
+            a.dir = format!("{at}{}", a.dir);
+            a.source = i;
+            a
+        }));
+        docs.extend(scanned.docs.into_iter().map(|mut a| {
+            a.rel = format!("{at}{}", a.rel);
+            a.dir = format!("{at}{}", a.dir);
+            a.source = i;
+            a
+        }));
+    }
+    let scanned = Scanned { assets, docs };
 
     // Folder tree with counts, for the source rail.
     let mut order: Vec<String> = Vec::new();
@@ -281,6 +390,19 @@ pub fn get_project(cfg: &Config, id: &str) -> Result<Project> {
         slug: parsed.slug,
         title: parsed.title.to_uppercase(),
         tree,
+        // What each `@N/` prefix means, so the UI can name a folder rather
+        // than showing the reader a bare index.
+        sources: d
+            .sources
+            .iter()
+            .enumerate()
+            .map(|(i, sc)| SourceInfo {
+                index: i,
+                root: sc.root.label.clone(),
+                folder: sc.folder.clone(),
+                dir: sc.dir.to_string_lossy().to_string(),
+            })
+            .collect(),
         assets: scanned.assets,
         docs: scanned.docs,
     })
@@ -347,6 +469,33 @@ pub fn browse(target: &str) -> Browse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A page can be built from several folders, so one flat `rel` has to say
+    /// which folder it came from. Source 0 is deliberately unprefixed: that is
+    /// what keeps selections saved before merging existed still resolving.
+    #[test]
+    fn a_rel_names_the_source_it_came_from() {
+        assert_eq!(split_source("photos/a.jpg"), (0, "photos/a.jpg"));
+        assert_eq!(split_source("@1/photos/a.jpg"), (1, "photos/a.jpg"));
+        assert_eq!(split_source("@12/a.jpg"), (12, "a.jpg"));
+        // A filename that merely starts with @ belongs to the primary.
+        assert_eq!(split_source("@weird name.jpg"), (0, "@weird name.jpg"));
+        assert_eq!(split_source("@notanumber/a.jpg"), (0, "@notanumber/a.jpg"));
+        assert_eq!(prefix_for(0), "");
+        assert_eq!(prefix_for(2), "@2/");
+    }
+
+    #[test]
+    fn merging_ids_keeps_the_first_as_primary() {
+        let a = encode_id("R1", "folder one");
+        let b = encode_id("R2", "folder two");
+        let merged = merge_ids(&[a.clone(), b.clone()]).expect("merge");
+        // A single id must come back byte-identical, or every saved selection
+        // and every cached thumbnail key changes meaning.
+        assert_eq!(merge_ids(&[a.clone()]).expect("merge one"), a);
+        assert_ne!(merged, a);
+        assert!(merge_ids(&[]).is_err());
+    }
 
     #[test]
     fn ids_round_trip_folders_containing_spaces() {
