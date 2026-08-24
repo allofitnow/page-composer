@@ -1104,6 +1104,14 @@ function buildTree(flat) {
 /** A folder filter matches its own assets and everything nested beneath it. */
 const inFolder = (assetDir, filter) => !filter || assetDir === filter || assetDir.startsWith(filter + '/');
 
+/** `@1` -> the name of the folder that source really is. */
+function sourceName(name) {
+  const m = /^@(\d+)$/.exec(String(name));
+  if (!m) return String(name);
+  const src = state.project?.sources?.[Number(m[1])];
+  return src ? src.folder : name;
+}
+
 function treeRows(node, out = []) {
   for (const child of node.children) {
     const total = child.images + child.videos;
@@ -1134,7 +1142,9 @@ function treeRows(node, out = []) {
             )
           : h('span.treerow__twist'),
         child.videos > child.images ? IC.vid() : IC.img(),
-        h('span.trunc.grow', {}, child.name.toUpperCase()),
+        // A secondary source arrives as a folder literally named "@1". Show the
+        // folder it actually is, or the rail asks the reader to decode indexes.
+        h('span.trunc.grow', {}, sourceName(child.name).toUpperCase()),
         h('span.dimmer', { style: { fontSize: '9.5px' } }, total)
       )
     );
