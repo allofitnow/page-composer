@@ -1336,8 +1336,12 @@ function buildTimeline(rel) {
     if (!peek || peek.rel !== rel) return;
     const f = frameOf(meta.mediaTime, fps);
     peek.timeline?.setFrame(f);
+    // Loop the kept span — but only while PLAYING. Doing it whenever the frame
+    // changed meant scrubbing past the out point snapped straight back to the
+    // in point, which makes it impossible to look at the rest of the clip in
+    // order to decide where the marks should go.
     const t = trimOf(rel);
-    if (t && t.inFrame !== undefined && f > t.outFrame) peek.timeline?.goTo(t.inFrame);
+    if (t && t.inFrame !== undefined && f > t.outFrame && !peek.video?.paused) peek.timeline?.goTo(t.inFrame);
     peek.video?.requestVideoFrameCallback?.(onFrameShown);
   };
   if (peek.video.requestVideoFrameCallback) peek.video.requestVideoFrameCallback(onFrameShown);
