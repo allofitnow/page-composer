@@ -28,7 +28,7 @@ vm.createContext(ctx);
 const EXPORTS =
   '({ LAYOUTS, SEAM_ORDER, SEAM_LEFT, DEFAULT_LAYOUT, layoutOf, slotsFor, spansFor, aspectFor, alignEndFor,' +
   ' normaliseGallery, flatTiles, galleryCount, removeTile, insertIntoRow, moveTile, setLayout,' +
-  ' layoutsForCount, findRel, appendTile,' +
+  ' layoutsForCount, findRel, appendTile, liftTile, dropPatch,' +
   ' HEIGHT_ORDER, HEIGHT_STEPS, RAIL_W, MIN_STRIP, ratioOf, slotHeightRaw, stripHeight, nearestHeightIndex,' +
   ' heightLabel })';
 vm.runInContext(code + '\n;' + EXPORTS, ctx);
@@ -275,6 +275,55 @@ check('every step snaps back to itself',
 
 check('the grip labels drop the FULL prefix', api.HEIGHT_ORDER.map(api.heightLabel),
   ['16:9', '2:1', '16:7', '3:1', '3.8:1', '27:4']);
+
+// 12. Dragging out of the asset grid. The drag now starts in one of two
+//     places, and a grid asset that is already in the rail must MOVE rather
+//     than land a second copy of the same picture in the gallery.
+const fromGrid = (rel) => ({ from: 'source', rel });
+
+ctx.state.gallery = [row('full', 'a'), row('full', 'b')];
+check('a new asset dropped in a gap becomes a row there',
+  shape(api.moveTile(fromGrid('z'), { kind: 'gap', at: 1 })),
+  [['full', ['a']], ['full', ['z']], ['full', ['b']]]);
+check('a new asset dropped at the end goes last',
+  shape(api.moveTile(fromGrid('z'), { kind: 'gap', at: -1 })),
+  [['full', ['a']], ['full', ['b']], ['full', ['z']]]);
+check('a new asset dropped on a tile splits that row',
+  shape(api.moveTile(fromGrid('z'), { kind: 'cell', row: 0, slot: 0, side: 'right' })),
+  [['two-up', ['a', 'z']], ['full', ['b']]]);
+
+// The move case: 'b' is already in the rail, so dragging it from the grid onto
+// row 0 must leave two tiles, not three.
+check('an asset already in the rail moves instead of duplicating',
+  shape(api.moveTile(fromGrid('b'), { kind: 'cell', row: 0, slot: 0, side: 'right' })),
+  [['two-up', ['a', 'b']]]);
+check('...and the count does not grow',
+  api.galleryCount(api.moveTile(fromGrid('b'), { kind: 'cell', row: 0, slot: 0, side: 'right' })), 2);
+
+// The index shift only applies when a row actually collapsed behind the tile.
+ctx.state.gallery = [row('full', 'a'), row('full', 'b'), row('full', 'c')];
+check('a new asset does not shift the target index',
+  shape(api.moveTile(fromGrid('z'), { kind: 'gap', at: 2 })),
+  [['full', ['a']], ['full', ['b']], ['full', ['z']], ['full', ['c']]]);
+// Lifting 'a' collapses row 0, so the gap that was index 2 is now index 1.
+check('a moved asset does shift the target index',
+  shape(api.moveTile(fromGrid('a'), { kind: 'gap', at: 2 })),
+  [['full', ['b']], ['full', ['a']], ['full', ['c']]]);
+
+// Dragging the hero into the gallery has to give up the hero, or the same
+// asset is both the key image and a carousel tile.
+ctx.state.gallery = [row('full', 'a')];
+ctx.state.hero = 'h';
+check('dragging the hero into the rail clears it', api.dropPatch(fromGrid('h'), { kind: 'gap', at: -1 }).hero, null);
+check('dragging anything else leaves the hero alone',
+  'hero' in api.dropPatch(fromGrid('z'), { kind: 'gap', at: -1 }), false);
+ctx.state.hero = null;
+
+// A rail tile still drags the old way — the shape without `from` is the rail.
+ctx.state.gallery = [row('two-up', 'a', 'b')];
+check('a rail drag still works without the discriminator',
+  shape(api.moveTile({ row: 0, slot: 1 }, { kind: 'gap', at: 0 })),
+  [['full', ['b']], ['full', ['a']]]);
 
 console.log(failures ? `\n${failures} FAILED` : '\nall gallery-layout checks passed');
 process.exit(failures ? 1 : 0);

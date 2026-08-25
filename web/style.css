@@ -375,6 +375,12 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .cell:hover .cell__x { opacity: 1; }
 .cell__x:hover { color: var(--cw); }
 
+/* The hero plate accepts a drop from the grid. Green-lit or refused up front,
+   rather than letting go and then reading a toast: a video cannot be the hero,
+   because the hero doubles as the work-grid thumbnail. */
+.herodrop[data-over='yes'] { outline: 2px solid var(--cw) !important; outline-offset: -2px; }
+.herodrop[data-over='no'] { outline: 2px solid #ff6b6b !important; outline-offset: -2px; cursor: no-drop; }
+
 /* The drop preview: a rectangle over the half the incoming tile will take. */
 .cell[data-drop]::after {
   content: '';

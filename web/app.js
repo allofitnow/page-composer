@@ -1315,8 +1315,35 @@ function screenCompose() {
                 const badge = roleOf(a.rel);
                 return h(
                   'button.tile',
-                  { 'data-on': badge ? '1' : '0', 'data-role': state.hero === a.rel ? 'hero' : '', 'data-blocked': state.mode === 'hero' && a.kind === 'video' ? '1' : '0', onClick: () => pickAsset(a.rel), title: state.mode === 'hero' && a.kind === 'video' ? a.rel + ' — a video cannot be the hero' : a.rel },
-                  thumb(a.rel, 420, { loading: 'lazy', alt: a.name }),
+                  {
+                    'data-on': badge ? '1' : '0',
+                    'data-role': state.hero === a.rel ? 'hero' : '',
+                    'data-blocked': state.mode === 'hero' && a.kind === 'video' ? '1' : '0',
+                    onClick: () => pickAsset(a.rel),
+                    title:
+                      state.mode === 'hero' && a.kind === 'video'
+                        ? a.rel + ' — a video cannot be the hero'
+                        : a.rel + '\nclick to add · drag to place it exactly',
+                    // Clicking appends to the end; dragging says WHERE. Same
+                    // drop sites the rail already has, so a tile can go
+                    // straight into a split or between two rows without being
+                    // added and then moved.
+                    draggable: true,
+                    onDragstart: (e) => {
+                      state.drag = { from: 'source', rel: a.rel };
+                      e.dataTransfer.effectAllowed = 'copy';
+                      // Set directly, not through render(): re-rendering mid-drag
+                      // replaces the element being dragged and Chromium cancels it.
+                      markDragging(true);
+                    },
+                    onDragend: () => {
+                      state.drag = null;
+                      markDragging(false);
+                    },
+                  },
+                  // An <img> is a drag source in its own right, so without this
+                  // the browser drags the photo and the drop never fires.
+                  thumb(a.rel, 420, { loading: 'lazy', alt: a.name, draggable: 'false' }),
                   badge && h('span.tile__badge', {}, badge === 'hero' ? 'HERO' : badge),
                   a.kind === 'video' && h('span.tile__vid.m', {}, a.ext.replace('.', '').toUpperCase()),
                   h('span.tile__name', {}, a.name)
@@ -1337,7 +1364,33 @@ function screenCompose() {
         { style: { display: 'flex', flexDirection: 'column', gap: '7px' } },
         h(
           'div',
-          { style: { position: 'relative', aspectRatio: '16/9', borderRadius: '12px', overflow: 'hidden', background: '#111', outline: state.hero ? '2px solid #fff' : '1px solid var(--rule)', outlineOffset: '-2px' } },
+          {
+            class: 'herodrop',
+            style: { position: 'relative', aspectRatio: '16/9', borderRadius: '12px', overflow: 'hidden', background: '#111', outline: state.hero ? '2px solid #fff' : '1px solid var(--rule)', outlineOffset: '-2px' },
+            // The hero is a drop site too, so setting the key image does not
+            // mean switching the grid into HERO mode first.
+            onDragover: (e) => {
+              if (state.drag?.from !== 'source') return;
+              e.preventDefault();
+              e.currentTarget.dataset.over = kindOf(state.drag.rel) === 'video' ? 'no' : 'yes';
+            },
+            onDragleave: (e) => e.currentTarget.removeAttribute('data-over'),
+            onDrop: (e) => {
+              e.preventDefault();
+              e.currentTarget.removeAttribute('data-over');
+              const from = state.drag;
+              state.drag = null;
+              markDragging(false);
+              if (from?.from !== 'source') return;
+              // Same refusal as clicking: the hero doubles as the work-grid
+              // thumbnail, and a video there renders as a broken tile.
+              if (kindOf(from.rel) === 'video') {
+                toast('The hero must be a still — it is also the work-grid thumbnail', 'error');
+                return;
+              }
+              set({ hero: from.rel, gallery: withoutRel(state.gallery, from.rel) });
+            },
+          },
           state.hero
             ? [thumb(state.hero, 640, { style: 'width:100%;height:100%;object-fit:cover;display:block' }), h('span.tile__badge', { style: { background: '#fff' } }, 'HERO')]
             : h('div.empty', { style: { fontSize: '9px' } }, 'No hero set')
@@ -1375,7 +1428,31 @@ function screenCompose() {
               .flatMap((row, r) => [rowGap(r), railRow(row, r, nameAt)])
               .concat(rowGap(-1))
           )
-        : h('div.empty', { style: { flex: '1 1 auto', fontSize: '9px' } }, 'Click tiles to build the carousel'),
+        : // An empty rail still has to accept the first drop, so the empty
+          // state IS the drop site rather than sitting next to one.
+          h(
+            'div.rows',
+            { 'data-dragging': state.drag !== null ? '1' : '0', style: { flex: '1 1 auto', display: 'flex' } },
+            h('div.empty', { style: { flex: '1 1 auto', fontSize: '9px', pointerEvents: 'none' } }, 'Click or drag tiles to build the carousel'),
+            h('div.rowgap', {
+              style: { position: 'absolute', inset: '0', height: 'auto' },
+              onDragover: (e) => {
+                if (state.drag === null) return;
+                e.preventDefault();
+                e.currentTarget.dataset.over = '1';
+              },
+              onDragleave: (e) => e.currentTarget.removeAttribute('data-over'),
+              onDrop: (e) => {
+                e.preventDefault();
+                e.currentTarget.removeAttribute('data-over');
+                const from = state.drag;
+                state.drag = null;
+                markDragging(false);
+                if (from === null) return;
+                set(dropPatch(from, { kind: 'gap', at: -1 }));
+              },
+            })
+          ),
       h(
         'div',
         { style: { flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: '12px', borderTop: '1px solid var(--rule)' } },
@@ -1456,26 +1533,72 @@ function insertIntoRow(rows, ri, slot, tile) {
  * (reordering). Removing the tile first can delete its old row, which shifts
  * every row below it up by one - hence the index fix-ups.
  */
+/**
+ * Takes the dragged tile out of wherever it came from and reports where that
+ * was, because removing a row shifts every index below it.
+ *
+ * A drag starts in one of two places now: a tile already in the rail, or an
+ * asset in the grid. `fromRow: Infinity` is what says "nothing was removed" —
+ * a grid asset that is not in the rail yet shifts nothing.
+ */
+function liftTile(from) {
+  const lift = (row, slot) => {
+    const tile = state.gallery[row]?.items[slot];
+    if (!tile) return null;
+    return {
+      tile,
+      rows: removeTile(state.gallery, row, slot),
+      collapses: state.gallery[row].items.length === 1,
+      fromRow: row,
+    };
+  };
+
+  if (from?.from === 'source') {
+    // An asset already in the rail MOVES rather than duplicating — the grid
+    // tile and the rail tile are the same picture, and two copies of one image
+    // in a gallery is never what the drag meant.
+    const found = findRel(state.gallery, from.rel);
+    if (found) return lift(found.row, found.slot);
+    return {
+      tile: { rel: from.rel, description: 'gallery' },
+      rows: state.gallery.map((r) => ({ layout: r.layout, items: [...r.items] })),
+      collapses: false,
+      fromRow: Infinity,
+    };
+  }
+  return lift(from.row, from.slot);
+}
+
 function moveTile(from, target) {
-  const tile = state.gallery[from.row]?.items[from.slot];
-  if (!tile) return state.gallery;
-  const collapses = state.gallery[from.row].items.length === 1;
-  const rows = removeTile(state.gallery, from.row, from.slot);
+  const lifted = liftTile(from);
+  if (!lifted) return state.gallery;
+  const { tile, rows, collapses, fromRow } = lifted;
 
   if (target.kind === 'gap') {
     let at = target.at < 0 ? rows.length : target.at;
-    if (collapses && from.row < at) at -= 1;
+    if (collapses && fromRow < at) at -= 1;
     rows.splice(Math.max(0, Math.min(rows.length, at)), 0, { layout: DEFAULT_LAYOUT, items: [tile] });
     return rows;
   }
 
   let ri = target.row;
-  if (collapses && from.row < ri) ri -= 1;
+  if (collapses && fromRow < ri) ri -= 1;
   if (ri < 0 || ri >= rows.length) {
     rows.push({ layout: DEFAULT_LAYOUT, items: [tile] });
     return rows;
   }
   return insertIntoRow(rows, ri, target.slot + (target.side === 'right' ? 1 : 0), tile);
+}
+
+/**
+ * The whole state patch a drop produces. Dragging the hero into the gallery has
+ * to clear the hero as well, the same way clicking it does — otherwise the same
+ * asset is both the key image and a carousel tile.
+ */
+function dropPatch(from, target) {
+  const patch = { gallery: moveTile(from, target) };
+  if (from?.from === 'source' && state.hero === from.rel) patch.hero = null;
+  return patch;
 }
 
 /** Changes only the layout of one row, leaving its images alone. */
@@ -1514,7 +1637,7 @@ function rowGap(rowIndex) {
       state.drag = null;
       markDragging(false);
       if (from === null) return;
-      set({ gallery: moveTile(from, { kind: 'gap', at: rowIndex }) });
+      set(dropPatch(from, { kind: 'gap', at: rowIndex }));
     },
   });
 }
@@ -1558,7 +1681,7 @@ function railRow(row, rowIndex, nameAt) {
             ' of ' +
             row.items.length,
           onDragstart: (e) => {
-            state.drag = { row: rowIndex, slot };
+            state.drag = { from: 'rail', row: rowIndex, slot };
             e.dataTransfer.effectAllowed = 'move';
             e.currentTarget.classList.add('dragging');
             // Set directly rather than through render(): re-rendering mid-drag
@@ -1592,7 +1715,7 @@ function railRow(row, rowIndex, nameAt) {
             state.drag = null;
             markDragging(false);
             if (from === null) return;
-            set({ gallery: moveTile(from, { kind: 'cell', row: rowIndex, slot, side }) });
+            set(dropPatch(from, { kind: 'cell', row: rowIndex, slot, side }));
           },
         },
         // An <img> is a drag source in its own right, so without this the browser
