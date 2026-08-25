@@ -415,27 +415,101 @@ textarea.field { resize: vertical; line-height: 1.6; }
   letter-spacing: 0.22em;
   color: var(--cw45);
 }
-/* The trim strip: two marks and what they leave. The scrubbing is the video's
-   own control — this only shows the kept span and the playhead inside it. */
+/* ---- the trim timeline ---------------------------------------------------
+   Frames, not seconds. The ruler is a canvas because at full zoom it draws a
+   tick per frame and a few hundred DOM nodes for that would be silly; the
+   marks and the playhead stay as elements so they can be dragged. */
 .peek__trim { flex: 0 0 auto; display: flex; flex-direction: column; gap: 9px; padding-top: 14px; }
-.trimbar {
+.tl__track {
   position: relative;
-  height: 8px;
-  background: #1a1d21;
+  height: 34px;
+  background: #101317;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: col-resize;
+  touch-action: none;
+  overflow: hidden;
 }
-.trimbar__keep {
+.tl__ruler { display: block; width: 100%; height: 34px; }
+.tl__layer { position: absolute; inset: 0; pointer-events: none; }
+.tl__keep {
   position: absolute; top: 0; bottom: 0;
+  background: rgba(217, 225, 234, 0.14);
+  border-top: 1px solid var(--cw45);
+  border-bottom: 1px solid var(--cw45);
+}
+.tl__mark {
+  position: absolute; top: 0; bottom: 0;
+  width: 9px;
+  margin-left: -4px;
+  pointer-events: auto;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.tl__mark::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0; left: 4px;
+  width: 1px;
   background: var(--cw45);
-  border-radius: 4px;
 }
-.trimbar__head {
-  position: absolute; top: -3px; bottom: -3px;
-  width: 2px;
-  background: var(--cw);
+.tl__mark[data-set='1']::after { background: var(--cw); width: 2px; }
+/* A flag on the outside edge, so in and out cannot be mistaken for each other
+   when they are a frame apart. */
+.tl__mark::before {
+  content: '';
+  position: absolute; top: 0;
+  border: 4px solid transparent;
 }
-.peek__trimacts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tl__mark--in::before { left: 4px; border-left-color: var(--cw); border-top-color: var(--cw); }
+.tl__mark--out::before { right: 4px; border-right-color: var(--cw); border-top-color: var(--cw); }
+.tl__head {
+  position: absolute; top: 0; bottom: 0;
+  background: rgba(255, 255, 255, 0.9);
+  min-width: 1px;
+  mix-blend-mode: difference;
+}
+.tl__read {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--cw80);
+  white-space: pre;
+  overflow-x: auto;
+}
+.tl__bar { display: flex; gap: 6px; flex-wrap: wrap; }
+.tl__warn { font-size: 9px; letter-spacing: 0.18em; color: #ffd166; }
+
+/* ---- the right-click menu ---- */
+.menu {
+  position: fixed;
+  z-index: 70;
+  min-width: 210px;
+  background: rgba(8, 8, 9, 0.97);
+  border: 1px solid var(--cw45);
+  border-radius: 6px;
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.menu__name {
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  color: var(--cw45);
+  padding: 0 2px 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.menu__row { display: flex; gap: 6px; }
+.menu__btn {
+  flex: 1 1 auto;
+  font-family: var(--mono); font-weight: 300;
+  font-size: 8.5px; letter-spacing: 0.16em;
+  color: var(--cw);
+  background: none;
+  border: 1px solid var(--cw45);
+  padding: 6px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.menu__btn:hover { background: var(--cw); color: #000; border-color: var(--cw); }
 
 .peek__bar {
   flex: 0 0 auto;

@@ -127,6 +127,17 @@ export async function mediaSrc(projectId, rel) {
 }
 
 /**
+ * Frame rate, frame count and duration of a SOURCE video — everything the trim
+ * timeline needs to be frame accurate. Probed on the source, never the proxy,
+ * because the frame numbers have to mean the same thing to ffmpeg at compose
+ * time and compose reads the source.
+ */
+export async function probeMedia(projectId, rel) {
+  if (!isTauri) return http(`/api/probe/${projectId}?${q({ rel })}`);
+  return invoke('probe_media', { id: projectId, rel });
+}
+
+/**
  * A web-playable proxy of a source video, for when the original is a format the
  * webview cannot decode. Slow the first time — it is a real transcode — and
  * cached after that.

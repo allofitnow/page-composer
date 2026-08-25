@@ -212,15 +212,18 @@ fn cut_args(trim: Option<Trim>) -> Vec<std::ffi::OsString> {
     let mut args: Vec<std::ffi::OsString> = Vec::new();
     let Some(trim) = trim else { return args };
     let start = trim.start.max(0.0);
+    // Six decimals, not three: the front end aims half a frame past each
+    // boundary, and at 60fps that margin is 0.0083s — three decimals can eat
+    // most of it, and at 120fps all of it.
     if start > 0.0 {
         args.push("-ss".into());
-        args.push(format!("{start:.3}").into());
+        args.push(format!("{start:.6}").into());
     }
     if let Some(out) = trim.out {
         let dur = out - start;
         if dur > 0.0 {
             args.push("-t".into());
-            args.push(format!("{dur:.3}").into());
+            args.push(format!("{dur:.6}").into());
         }
     }
     args
@@ -477,7 +480,7 @@ mod tests {
 
     #[test]
     fn the_head_is_an_input_seek() {
-        assert_eq!(args(Some(Trim { start: 2.0, out: None })), vec!["-ss", "2.000"]);
+        assert_eq!(args(Some(Trim { start: 2.0, out: None })), vec!["-ss", "2.000000"]);
     }
 
     /// The tail is a DURATION from the in point, not an absolute out point —
@@ -486,14 +489,22 @@ mod tests {
     fn the_tail_is_a_duration_from_the_in_point() {
         assert_eq!(
             args(Some(Trim { start: 2.0, out: Some(5.0) })),
-            vec!["-ss", "2.000", "-t", "3.000"]
+            vec!["-ss", "2.000000", "-t", "3.000000"]
         );
-        assert_eq!(args(Some(Trim { start: 0.0, out: Some(4.5) })), vec!["-t", "4.500"]);
+        assert_eq!(args(Some(Trim { start: 0.0, out: Some(4.5) })), vec!["-t", "4.500000"]);
+
+        // Six decimals matter: the front end aims half a frame past each
+        // boundary, and three decimals can swallow that margin at 60fps.
+        // 34.591667 / 0.516667 is the 31-frame trim measured against ffmpeg.
+        assert_eq!(
+            args(Some(Trim { start: 34.591666666, out: Some(35.108333333) })),
+            vec!["-ss", "34.591667", "-t", "0.516667"]
+        );
     }
 
     #[test]
     fn an_out_point_before_the_in_point_cuts_nothing_rather_than_erroring() {
-        assert_eq!(args(Some(Trim { start: 5.0, out: Some(2.0) })), vec!["-ss", "5.000"]);
+        assert_eq!(args(Some(Trim { start: 5.0, out: Some(2.0) })), vec!["-ss", "5.000000"]);
     }
 
     #[test]

@@ -4,7 +4,7 @@ import express from 'express';
 import { config, roots, ROOT_DIR, applyRoots, saveConfig, saveCredentials, reachable } from './config.js';
 import { listProjects, getProject, invalidateAll, decodeId, resolveRel, mergeIds } from './scan.js';
 import { thumbnail, preview } from './thumbs.js';
-import { ffmpegStatus } from './ffmpeg.js';
+import { ffmpegStatus, probe, videoInfo } from './ffmpeg.js';
 import { parseCopyDoc, validate, TAXONOMY } from './copydoc.js';
 import { startCompose, getJob, plan } from './compose.js';
 import { publish, payloadStatus, checkLogin, setCredentials, clearCredentials, serviceCategories } from './payload.js';
@@ -98,6 +98,18 @@ app.get('/api/file/:id', wrap((req, res) => {
   if (!asset) return res.status(404).end();
   res.setHeader('Cache-Control', 'private, max-age=3600');
   res.sendFile(resolveRel(decodeId(req.params.id), asset.rel), { dotfiles: 'allow' });
+}));
+
+// Frame rate and frame count for the trim timeline. Always probed on the
+// SOURCE, never on the proxy: the frame numbers an editor sets have to mean the
+// same thing to ffmpeg at compose time, and compose reads the source.
+app.get('/api/probe/:id', wrap(async (req, res) => {
+  const project = getProject(req.params.id);
+  const asset = project.assets.find((a) => a.rel === req.query.rel);
+  if (!asset) return res.status(404).end();
+  const info = videoInfo(await probe(resolveRel(decodeId(req.params.id), asset.rel)));
+  if (!info) return res.status(400).json({ error: 'could not probe this file' });
+  res.json(info);
 }));
 
 // The proxy for a source video the webview cannot decode. Slow the first time —

@@ -2,7 +2,8 @@
 // One state object, one render pass per change. Text inputs commit on `change`
 // (blur/enter) rather than `input`, so re-rendering never eats a keystroke.
 
-import { rpc, thumbImg, mediaSrc, previewSrc, onComposeProgress, onPublishProgress, notify, pickFolder, openExternal, isTauri } from '/transport.js';
+import { rpc, thumbImg, mediaSrc, previewSrc, probeMedia, onComposeProgress, onPublishProgress, notify, pickFolder, openExternal, isTauri } from '/transport.js';
+import { createTimeline, spanSeconds, frameOf, timecode } from '/timeline.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -1123,7 +1124,7 @@ function openPeek(rel) {
     bar
   );
   document.body.append(node);
-  peek = { rel: null, node, stage, trim, bar, head: null, video: null, blob: null };
+  peek = { rel: null, node, stage, trim, bar, head: null, video: null, blob: null, info: null, timeline: null };
   showPeek(rel);
 }
 
@@ -1139,6 +1140,7 @@ function releaseBlob() {
 function closePeek() {
   if (!peek) return;
   releaseBlob();
+  peek.timeline?.destroy();
   // Stop the download as well as the sound: a paused <video> that is still
   // buffering a 300MB source keeps pulling it over the network.
   peek.node.querySelector('video')?.pause();
@@ -1151,6 +1153,9 @@ async function showPeek(rel) {
   const asset = state.project.assets.find((a) => a.rel === rel);
   if (!asset) return;
   releaseBlob();
+  peek.timeline?.destroy();
+  peek.timeline = null;
+  peek.info = null;
   peek.rel = rel;
   peek.head = null;
   peek.video = null;
@@ -1171,6 +1176,18 @@ async function showPeek(rel) {
 
   if (asset.kind === 'video') {
     mountVideo(rel, src, false);
+    // Probed in parallel with the file loading — the timeline needs the frame
+    // rate, and waiting for it before showing the picture would make every
+    // clip feel slow for the sake of a ruler.
+    probeMedia(state.project.id, rel)
+      .then((info) => {
+        if (peek?.rel !== rel) return;
+        peek.info = info;
+        buildTimeline(rel);
+      })
+      .catch((e) => {
+        if (peek?.rel === rel) peek.trim.replaceChildren(h('div.tl__warn.m', {}, 'NO FRAME RATE — ' + String(e.message || e)));
+      });
   } else {
     peek.stage.replaceChildren(h('img.peek__media', { src, alt: asset.name }));
   }
@@ -1187,9 +1204,19 @@ async function showPeek(rel) {
  * as it takes.
  */
 function mountVideo(rel, src, isProxy) {
-  const video = h('video.peek__media', { src, controls: true, loop: true, playsinline: true });
+  // No native controls: the timeline IS the scrub surface, and a second one
+  // under the picture would disagree with it about where a frame starts.
+  const video = h('video.peek__media', {
+    src,
+    loop: true,
+    playsinline: true,
+    onClick: (e) => {
+      e.stopPropagation();
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+    },
+  });
   peek.video = video;
-  watchTrim(video, rel);
 
   video.addEventListener('error', async () => {
     if (peek?.rel !== rel || isProxy) {
@@ -1216,7 +1243,7 @@ function mountVideo(rel, src, isProxy) {
   const show = () => {
     if (peek?.rel !== rel) return;
     peek.stage.replaceChildren(video);
-    paintPeekTrim();
+    peek.timeline?.repaint();
     // Autoplay with sound is blocked until the page has been interacted with;
     // fall back to muted rather than not playing at all.
     video.play().catch(() => {
@@ -1232,105 +1259,95 @@ function mountVideo(rel, src, isProxy) {
   } else {
     show();
   }
-}
 
-/** m:ss.s — long enough to be exact, short enough to sit in a chip. */
-const clock = (sec) => {
-  const s = Math.max(0, Number(sec) || 0);
-  return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
-};
+  // The proxy arrives after the probe did, so the timeline has to be told the
+  // video element changed underneath it.
+  video.addEventListener('loadedmetadata', () => {
+    if (peek?.rel !== rel) return;
+    if (peek.info) buildTimeline(rel);
+    const t = trimOf(rel);
+    if (t?.inFrame !== undefined && peek.info) peek.timeline?.goTo(t.inFrame);
+  }, { once: true });
+}
 
 /** The stored trim for an asset, or null when it is untrimmed. */
 const trimOf = (rel) => state.trims[rel] || null;
 
-function setTrim(rel, next) {
+/**
+ * Stores a trim as FRAMES, and derives the seconds the encoder needs.
+ *
+ * Both are kept: the frames are the truth an editor set and what the timeline
+ * redraws from, the seconds are what compose puts in front of ffmpeg. Deriving
+ * the seconds here — once, next to the frame rate they belong to — is what
+ * stops the two drifting apart.
+ */
+function setTrim(rel, next, fps) {
   const trims = { ...state.trims };
-  // A trim that cuts nothing is deleted, not stored as zeroes — otherwise every
-  // clip ever opened would carry a trim and the rail would badge all of them.
-  if (!next || (!(next.in > 0) && next.out == null)) delete trims[rel];
-  else trims[rel] = next;
+  const rate = fps || trims[rel]?.fps || 0;
+  const whole = next && rate > 0 && next.inFrame <= 0 && next.outFrame >= (peek?.info?.frames ?? 0) - 1;
+
+  // A trim that keeps the whole clip is deleted, not stored — otherwise every
+  // clip ever opened would carry one and the rail would badge all of them.
+  if (!next || !rate || whole) delete trims[rel];
+  else {
+    const secs = spanSeconds(next.inFrame, next.outFrame, rate);
+    trims[rel] = { inFrame: next.inFrame, outFrame: next.outFrame, fps: rate, in: secs.in, out: secs.out };
+  }
   set({ trims });
-  paintPeekTrim();
 }
 
 /**
- * In and out points for the clip on screen.
+ * The timeline, once ffprobe has said what the frame rate is.
  *
- * The video's own controls do the scrubbing — this is only the two marks and
- * what they leave. Playback loops the KEPT span, so what you watch is what
- * compose will encode rather than a pair of numbers you have to trust.
+ * It is built from `info` and not from the <video>: the element may be playing
+ * a transcoded proxy, and even when it is not, a video element cannot tell you
+ * its frame rate. The two agree because the proxy is encoded at the source's
+ * own rate.
  */
-function paintPeekTrim() {
-  if (!peek?.trim) return;
-  const video = peek.video;
-  const rel = peek.rel;
-  const asset = state.project.assets.find((a) => a.rel === rel);
+function buildTimeline(rel) {
+  if (!peek || peek.rel !== rel || !peek.info || !peek.video) return;
+  const { fps, frames } = peek.info;
 
-  if (!video || !asset || asset.kind !== 'video' || !isFinite(video.duration)) {
-    peek.trim.replaceChildren();
-    return;
+  // A trim stored before the timeline existed only has seconds. Recover the
+  // frames from them now that the rate is known, rather than dropping it.
+  const stored = trimOf(rel);
+  if (stored && stored.inFrame === undefined) {
+    setTrim(rel, { inFrame: frameOf(stored.in, fps), outFrame: Math.max(0, frameOf(stored.out, fps) - 1) }, fps);
   }
 
-  const dur = video.duration;
-  const t = trimOf(rel) || {};
-  const inAt = Math.min(Math.max(0, t.in || 0), dur);
-  const outAt = t.out == null ? dur : Math.min(t.out, dur);
-  const pct = (v) => `${(v / dur) * 100}%`;
-
-  const keep = h('div.trimbar__keep', { style: { left: pct(inAt), width: pct(Math.max(0, outAt - inAt)) } });
-  const head = h('div.trimbar__head', { style: { left: pct(video.currentTime || 0) } });
-  const bar = h(
-    'div.trimbar',
-    {
-      title: 'Click to scrub',
-      onClick: (e) => {
-        const box = e.currentTarget.getBoundingClientRect();
-        video.currentTime = ((e.clientX - box.left) / box.width) * dur;
-      },
+  peek.timeline?.destroy();
+  peek.timeline = createTimeline({
+    mount: peek.trim,
+    video: peek.video,
+    info: peek.info,
+    getTrim: () => {
+      const t = trimOf(rel);
+      return t && t.inFrame !== undefined ? { inFrame: t.inFrame, outFrame: t.outFrame } : null;
     },
-    keep,
-    head
-  );
-  peek.head = head;
-
-  const chip = (label, on, fn) => h('button.chip', { 'aria-pressed': String(Boolean(on)), onClick: fn }, label);
-  const kept = Math.max(0, outAt - inAt);
-
-  peek.trim.replaceChildren(
-    bar,
-    h(
-      'div.peek__trimacts',
-      {},
-      chip('SET IN  I', inAt > 0, () => setTrim(rel, { in: video.currentTime, out: t.out == null ? null : Math.max(t.out, video.currentTime) })),
-      chip('SET OUT  O', t.out != null, () => setTrim(rel, { in: Math.min(inAt, video.currentTime), out: video.currentTime })),
-      h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.14em' } },
-        `IN ${clock(inAt)}   OUT ${clock(outAt)}   KEEPS ${clock(kept)} OF ${clock(dur)}`),
-      trimOf(rel) && chip('CLEAR', false, () => setTrim(rel, null))
-    )
-  );
-}
-
-/** Keeps the playhead on the bar, and loops the kept span rather than the file. */
-function watchTrim(video, rel) {
-  video.addEventListener('loadedmetadata', () => {
-    const t = trimOf(rel);
-    if (t?.in > 0) video.currentTime = t.in;
-    paintPeekTrim();
+    onTrim: (next) => setTrim(rel, next, fps),
+    onFrame: () => {},
   });
-  video.addEventListener('timeupdate', () => {
-    if (peek?.rel !== rel) return;
+
+  // The playhead comes from requestVideoFrameCallback where it exists, because
+  // its mediaTime is the presentation time of the frame actually on screen —
+  // currentTime during playback is wherever the clock has got to, which is up
+  // to a frame ahead of the picture. timeupdate is the fallback, at ~4Hz.
+  const onFrameShown = (_now, meta) => {
+    if (!peek || peek.rel !== rel) return;
+    const f = frameOf(meta.mediaTime, fps);
+    peek.timeline?.setFrame(f);
     const t = trimOf(rel);
-    const dur = video.duration;
-    if (t && isFinite(dur)) {
-      const out = t.out == null ? dur : t.out;
-      // A hair of slack: timeupdate fires every ~250ms, so an exact compare
-      // would sail past the out point and only catch it on the next tick.
-      if (video.currentTime >= out - 0.02 || video.currentTime < (t.in || 0) - 0.5) {
-        video.currentTime = t.in || 0;
-      }
-    }
-    if (peek.head && isFinite(dur)) peek.head.style.left = `${(video.currentTime / dur) * 100}%`;
-  });
+    if (t && t.inFrame !== undefined && f > t.outFrame) peek.timeline?.goTo(t.inFrame);
+    peek.video?.requestVideoFrameCallback?.(onFrameShown);
+  };
+  if (peek.video.requestVideoFrameCallback) peek.video.requestVideoFrameCallback(onFrameShown);
+  else
+    peek.video.addEventListener('timeupdate', () => {
+      if (!peek || peek.rel !== rel) return;
+      peek.timeline?.setFrame(frameOf(peek.video.currentTime, fps));
+    });
+
+  if (frames <= 1) peek.trim.append(h('div.tl__warn.m', {}, 'ONE FRAME — NOTHING TO TRIM'));
 }
 
 function stepPeek(delta) {
@@ -1392,6 +1409,59 @@ function paintPeekBar() {
   );
 }
 
+// ------------------------------------------------------- the asset menu
+//
+// Two rows, because the two things you do with an asset are different in kind:
+// the top row PLACES it, the bottom row OPENS it. Lives on <body> for the same
+// reason the overlay does — render() replaces #app, and a menu that vanished
+// the moment its own button changed the state would be unusable.
+let menuNode = null;
+
+function closeMenu() {
+  menuNode?.remove();
+  menuNode = null;
+}
+
+function openAssetMenu(rel, x, y) {
+  closeMenu();
+  const asset = state.project?.assets.find((a) => a.rel === rel);
+  if (!asset) return;
+  const placed = roleOf(rel);
+  const inPage = Boolean(placed) && placed !== 'hero';
+
+  const row = (...kids) => h('div.menu__row', {}, kids.filter(Boolean));
+  const item = (label, title, fn) =>
+    h('button.menu__btn', { title, onClick: () => { closeMenu(); fn(); } }, label);
+
+  menuNode = h(
+    'div.menu',
+    { style: { left: x + 'px', top: y + 'px' } },
+    h('div.menu__name.m', { title: rel }, asset.name),
+    row(
+      item(inPage ? `IN PAGE ${placed} — REMOVE` : 'ADD TO PAGE', 'Add or remove the carousel tile', () => pickAsset(rel)),
+      asset.kind !== 'video' &&
+        item(state.hero === rel ? 'HERO ✓ — CLEAR' : 'SET HERO', 'The key image, and the work-grid thumbnail', () =>
+          set({ hero: state.hero === rel ? null : rel, gallery: withoutRel(state.gallery, rel) })
+        )
+    ),
+    row(
+      item(asset.kind === 'video' ? 'TRIM…' : 'PREVIEW', 'Open it full size  (space)', () => openPeek(rel)),
+      asset.kind === 'video' && trimOf(rel) && item('CLEAR TRIM', 'Encode the whole clip again', () => setTrim(rel, null))
+    )
+  );
+  document.body.append(menuNode);
+
+  // Nudge back on screen if it opened near an edge.
+  const box = menuNode.getBoundingClientRect();
+  if (box.right > innerWidth - 8) menuNode.style.left = Math.max(8, innerWidth - box.width - 8) + 'px';
+  if (box.bottom > innerHeight - 8) menuNode.style.top = Math.max(8, innerHeight - box.height - 8) + 'px';
+}
+
+window.addEventListener('pointerdown', (e) => {
+  if (menuNode && !(e.target instanceof HTMLElement && e.target.closest('.menu'))) closeMenu();
+});
+window.addEventListener('blur', closeMenu);
+
 // One listener for the whole app. Space is the whole point, so it has to be
 // taken before the browser scrolls the sheet — or, on a focused tile, before
 // it fires the button's click and silently adds the asset.
@@ -1399,31 +1469,41 @@ window.addEventListener('keydown', (e) => {
   const el = e.target;
   if (el instanceof HTMLElement && el.closest('input, textarea, [contenteditable="true"]')) return;
 
+  if (menuNode && e.key === 'Escape') {
+    e.preventDefault();
+    closeMenu();
+    return;
+  }
+
   if (peek) {
     if (e.key === 'Escape' || e.key === ' ') {
       e.preventDefault();
       closePeek();
-    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    } else if (e.key === 'ArrowDown' || (e.key === 'ArrowRight' && !peek.timeline)) {
       e.preventDefault();
       stepPeek(1);
-    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    } else if (e.key === 'ArrowUp' || (e.key === 'ArrowLeft' && !peek.timeline)) {
       e.preventDefault();
       stepPeek(-1);
     } else if (e.key === 'Enter') {
       e.preventDefault();
       pickAsset(peek.rel);
       paintPeekBar();
-    } else if (e.key === 'i' || e.key === 'I' || e.key === 'o' || e.key === 'O') {
-      // The NLE keys, because that is what anyone reaching for a trim already
-      // has in their hands.
-      const video = peek.video;
-      if (!video || !isFinite(video.duration)) return;
-      e.preventDefault();
-      const t = trimOf(peek.rel) || {};
-      if (e.key.toLowerCase() === 'i') {
-        setTrim(peek.rel, { in: video.currentTime, out: t.out == null ? null : Math.max(t.out, video.currentTime) });
-      } else {
-        setTrim(peek.rel, { in: Math.min(t.in || 0, video.currentTime), out: video.currentTime });
+    } else if (peek.timeline) {
+      // With a timeline up, the arrows belong to FRAMES — walking the contact
+      // sheet moves to up/down. The letters are the NLE ones, because that is
+      // what anyone reaching for a trim already has in their hands.
+      const k = e.key.toLowerCase();
+      const jump = e.shiftKey ? 10 : 1;
+      if (e.key === 'ArrowRight') { e.preventDefault(); peek.timeline.step(jump); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); peek.timeline.step(-jump); }
+      else if (k === 'i') { e.preventDefault(); peek.timeline.markIn(); }
+      else if (k === 'o') { e.preventDefault(); peek.timeline.markOut(); }
+      else if (k === 'f') { e.preventDefault(); peek.timeline.fit(); }
+      else if (k === 'k' || k === 'p') {
+        e.preventDefault();
+        if (peek.video?.paused) peek.video.play().catch(() => {});
+        else peek.video?.pause();
       }
     }
     return;
@@ -1699,6 +1779,10 @@ function screenCompose() {
                     // what is under it.
                     onMouseenter: () => {
                       hoverRel = a.rel;
+                    },
+                    onContextmenu: (e) => {
+                      e.preventDefault();
+                      openAssetMenu(a.rel, e.clientX, e.clientY);
                     },
                     onMouseleave: () => {
                       if (hoverRel === a.rel) hoverRel = null;
@@ -2101,7 +2185,13 @@ function railRow(row, rowIndex, nameAt) {
         state.trims[it.rel] &&
           h(
             'span.cell__trim.m',
-            { title: `TRIMMED ${clock(state.trims[it.rel].in || 0)} → ${state.trims[it.rel].out == null ? 'END' : clock(state.trims[it.rel].out)}` },
+            {
+              title: (() => {
+                const t = state.trims[it.rel];
+                if (t.inFrame === undefined) return 'TRIMMED';
+                return `TRIMMED ${timecode(t.inFrame, t.fps)} → ${timecode(t.outFrame, t.fps)} · ${t.outFrame - t.inFrame + 1} FRAMES`;
+              })(),
+            },
             'TRIM'
           ),
         h(

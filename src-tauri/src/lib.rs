@@ -206,6 +206,7 @@ pub fn run() {
             media::source_path,
             media::preview_video,
             media::preview_bytes,
+            media::probe_media,
             copydoc::read_copy_doc,
             copydoc::validate_fields,
             compose::plan_compose,

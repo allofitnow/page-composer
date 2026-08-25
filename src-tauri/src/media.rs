@@ -110,6 +110,134 @@ pub fn status(cfg: &Config) -> FfmpegStatus {
     }
 }
 
+/// What a frame-accurate timeline needs from a source file.
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoInfo {
+    pub width: u32,
+    pub height: u32,
+    pub codec: String,
+    pub fps_num: u32,
+    pub fps_den: u32,
+    pub fps: f64,
+    pub duration: f64,
+    pub frames: u64,
+}
+
+/// "30000/1001" -> (30000, 1001). Anything unusable is None.
+pub fn parse_rate(text: &str) -> Option<(u32, u32)> {
+    let (a, b) = text.trim().split_once('/')?;
+    let num: u32 = a.trim().parse().ok()?;
+    let den: u32 = b.trim().parse().ok()?;
+    if num == 0 || den == 0 {
+        None
+    } else {
+        Some((num, den))
+    }
+}
+
+/// Build the info from ffprobe's csv, in the field order asked for below.
+///
+/// `avg_frame_rate` is preferred over `r_frame_rate`: r_frame_rate is the
+/// smallest rate that can express every timestamp, so one odd timestamp turns
+/// it into something like 1000/1 and the ruler would grow a thousand ticks a
+/// second. `nb_frames` is missing from plenty of containers, so the count falls
+/// back to duration x rate.
+pub fn video_info_from(
+    width: u32,
+    height: u32,
+    codec: &str,
+    avg_rate: &str,
+    r_rate: &str,
+    nb_frames: &str,
+    duration: f64,
+) -> VideoInfo {
+    let rate = parse_rate(avg_rate).or_else(|| parse_rate(r_rate));
+    let (fps_num, fps_den) = rate.unwrap_or((0, 1));
+    let fps = if fps_den > 0 { fps_num as f64 / fps_den as f64 } else { 0.0 };
+    let counted: u64 = nb_frames.trim().parse().unwrap_or(0);
+    let frames = if counted > 0 {
+        counted
+    } else {
+        ((duration * fps).round() as i64).max(1) as u64
+    };
+    VideoInfo {
+        width,
+        height,
+        codec: codec.to_string(),
+        fps_num,
+        fps_den,
+        fps,
+        duration,
+        frames,
+    }
+}
+
+/// Frame rate and frame count for the trim timeline. Always the SOURCE, never
+/// the proxy: the frame numbers an editor sets have to mean the same thing to
+/// ffmpeg at compose time, and compose reads the source.
+#[tauri::command]
+pub fn probe_media(state: State<'_, AppState>, id: String, rel: String) -> Result<VideoInfo, String> {
+    let cfg = {
+        let guard = state.config.lock().map_err(|e| e.to_string())?;
+        guard.clone()
+    };
+    let decoded = scan::decode_id(&cfg, &id).map_err(|e| e.to_string())?;
+    let source = decoded.resolve(&rel).map_err(|e| e.to_string())?;
+    let bin = resolve("ffprobe", &cfg).ok_or_else(|| "ffprobe not found".to_string())?;
+
+    let out = command(&bin)
+        .args([
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,codec_name,avg_frame_rate,r_frame_rate,nb_frames,duration",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1",
+        ])
+        .arg(&source)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut f = std::collections::HashMap::new();
+    for line in text.lines() {
+        if let Some((k, v)) = line.split_once('=') {
+            f.insert(k.trim().to_string(), v.trim().to_string());
+        }
+    }
+    let get = |k: &str| f.get(k).cloned().unwrap_or_default();
+    // The stream carries a duration on some containers and not others; the
+    // format-level one is the fallback, and "N/A" parses to 0 either way.
+    let duration = get("duration")
+        .parse::<f64>()
+        .ok()
+        .filter(|d| *d > 0.0)
+        .unwrap_or_else(|| get("duration").parse::<f64>().unwrap_or(0.0));
+    let duration = if duration > 0.0 {
+        duration
+    } else {
+        text.lines()
+            .rev()
+            .find_map(|l| l.strip_prefix("duration="))
+            .and_then(|d| d.trim().parse::<f64>().ok())
+            .unwrap_or(0.0)
+    };
+
+    let info = video_info_from(
+        get("width").parse().unwrap_or(0),
+        get("height").parse().unwrap_or(0),
+        &get("codec_name"),
+        &get("avg_frame_rate"),
+        &get("r_frame_rate"),
+        &get("nb_frames"),
+        duration,
+    );
+    if info.fps <= 0.0 {
+        return Err(format!("no frame rate in {rel}"));
+    }
+    Ok(info)
+}
+
 pub fn probe(cfg: &Config, file: &Path) -> Option<String> {
     let bin = resolve("ffprobe", cfg)?;
     let out = command(&bin)

@@ -78,10 +78,13 @@ async function convertVideo(step) {
   const cut = [];
   if (step.trim) {
     const start = Math.max(0, Number(step.trim.in) || 0);
-    if (start > 0) cut.push('-ss', start.toFixed(3));
+    // Six decimals, not three: the front end aims half a frame past each
+    // boundary, and at 60fps that margin is 0.0083s — three decimals can eat
+    // most of it, and at 120fps all of it.
+    if (start > 0) cut.push('-ss', start.toFixed(6));
     if (step.trim.out != null) {
       const dur = Number(step.trim.out) - start;
-      if (dur > 0) cut.push('-t', dur.toFixed(3));
+      if (dur > 0) cut.push('-t', dur.toFixed(6));
     }
   }
   await ffmpeg([
