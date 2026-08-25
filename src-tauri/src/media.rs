@@ -10,7 +10,7 @@ use sha1::{Digest, Sha1};
 use std::path::Path;
 use std::process::Command;
 use std::sync::{Condvar, Mutex};
-use tauri::State;
+use tauri::{Manager, State};
 
 #[cfg(windows)]
 const NO_WINDOW: u32 = 0x0800_0000; // CREATE_NO_WINDOW
@@ -323,17 +323,19 @@ fn preview_key(file: &Path, mtime: f64) -> String {
 /// the scope, cannot silently stop working.
 #[tauri::command]
 pub async fn preview_bytes(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: String,
     rel: String,
 ) -> Result<tauri::ipc::Response, String> {
-    let path = preview_video(state, id, rel).await?;
+    let path = preview_video(app, state, id, rel).await?;
     let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
 pub async fn preview_video(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: String,
     rel: String,
@@ -354,6 +356,7 @@ pub async fn preview_video(
 
     let out = cache_dir.join(preview_key(&source, mtime));
     if out.exists() {
+        serve(&app, &out);
         return Ok(out.to_string_lossy().to_string());
     }
 
@@ -382,6 +385,7 @@ pub async fn preview_video(
             return Err(e.to_string());
         }
         std::fs::rename(&part, &out).map_err(|e| e.to_string())?;
+        serve(&app, &out);
         Ok(out.to_string_lossy().to_string())
     })
     .await
@@ -443,8 +447,26 @@ fn build(cfg: &Config, source: &Path, kind: Kind, width: u32, out: &Path) -> Res
 
 /// Returns the absolute path of a cached JPEG thumbnail. The front end turns it
 /// into an `asset:` URL — the cache dir is the only directory in scope.
+/// Hands a generated file to the asset protocol.
+///
+/// Allowing the CACHE DIRECTORY at startup is not enough, and the way it fails
+/// is quiet: `allow_directory` records the files that are in the directory at
+/// that moment, not a rule about the directory, so anything written afterwards
+/// comes back 403. Proved by copying a served thumbnail to a new name in the
+/// same directory — byte for byte identical, and the copy 403s while the
+/// original loads.
+///
+/// That is why the Page Order rail was the visible casualty: its thumbnails are
+/// 320px wide, a size nothing else asks for, so they are always generated fresh
+/// and were never in the startup snapshot. The contact sheet mostly survived on
+/// thumbnails left over from previous sessions.
+fn serve(app: &tauri::AppHandle, file: &Path) {
+    let _ = app.asset_protocol_scope().allow_file(file);
+}
+
 #[tauri::command]
 pub async fn thumbnail(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: String,
     rel: String,
@@ -491,17 +513,19 @@ pub async fn thumbnail(
 
     let out = cache_dir.join(cache_key(&source, mtime, width));
     if out.exists() {
+        serve(&app, &out);
         return Ok(out.to_string_lossy().to_string());
     }
 
     tauri::async_runtime::spawn_blocking(move || {
         let _slot = Slot::acquire();
         if out.exists() {
+            serve(&app, &out);
             return Ok(out.to_string_lossy().to_string());
         }
-        build(&cfg, &source, kind, width, &out)
-            .map(|_| out.to_string_lossy().to_string())
-            .map_err(|e| e.to_string())
+        build(&cfg, &source, kind, width, &out).map_err(|e| e.to_string())?;
+        serve(&app, &out);
+        Ok(out.to_string_lossy().to_string())
     })
     .await
     .map_err(|e| e.to_string())?

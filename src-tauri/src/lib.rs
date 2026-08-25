@@ -180,7 +180,10 @@ pub fn run() {
             std::fs::create_dir_all(&cache_dir)?;
 
             // Thumbnails are served straight off disk through the asset
-            // protocol, so the cache directory is allowed...
+            // protocol, so the cache directory is allowed — which covers what
+            // previous runs left behind, and ONLY that: the call records the
+            // files present right now rather than a rule about the directory,
+            // so anything generated later has to allow itself (see media::serve).
             app.asset_protocol_scope().allow_directory(&cache_dir, true)?;
             // ...and so are the asset roots, which the preview overlay reads
             // from directly. `allow_directory` only records a glob, so this
