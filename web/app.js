@@ -2,7 +2,7 @@
 // One state object, one render pass per change. Text inputs commit on `change`
 // (blur/enter) rather than `input`, so re-rendering never eats a keystroke.
 
-import { rpc, thumbImg, onComposeProgress, onPublishProgress, notify, pickFolder, openExternal, isTauri } from '/transport.js';
+import { rpc, thumbImg, mediaSrc, previewSrc, onComposeProgress, onPublishProgress, notify, pickFolder, openExternal, isTauri } from '/transport.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -1070,6 +1070,230 @@ function pickAsset(rel) {
   else set({ gallery: appendTile(state.gallery, rel), hero: state.hero === rel ? null : state.hero });
 }
 
+/** The assets the contact sheet is showing right now, in its own order. */
+function visibleAssets() {
+  const p = state.project;
+  if (!p) return [];
+  return p.assets.filter(
+    (a) => (state.kindFilter === 'all' || a.kind === state.kindFilter) && inFolder(a.dir, state.dirFilter)
+  );
+}
+
+// ------------------------------------------------------- 02b · quick look
+//
+// Finder's Quick Look, for the contact sheet: space opens whatever is under the
+// cursor, space or escape closes it, the arrows walk the sheet. A 420px thumb
+// is enough to recognise a shot and nowhere near enough to judge one, and a
+// video had no preview at all — the tile was a single frozen frame.
+//
+// The overlay is built by hand and lives on <body>, deliberately NOT in the
+// render tree: render() calls replaceChildren on #app, so a <video> in there
+// would be torn down and rebuilt — restarting playback — every time anything
+// else in the app changed state, including adding the very asset being watched.
+let hoverRel = null;
+let peek = null; // { rel, node, stage, bar } while the overlay is up
+
+function openPeek(rel) {
+  if (!rel || !state.project) return;
+  if (peek) return showPeek(rel);
+  const stage = h('div.peek__stage');
+  const bar = h('div.peek__bar');
+  const node = h(
+    'div.peek',
+    {
+      // Only a click on the backdrop itself closes — not one that lands on the
+      // picture, and not one on the scrub bar of a video.
+      onClick: (e) => {
+        if (e.target === e.currentTarget || e.target === stage) closePeek();
+      },
+    },
+    stage,
+    bar
+  );
+  document.body.append(node);
+  peek = { rel: null, node, stage, bar };
+  showPeek(rel);
+}
+
+function closePeek() {
+  if (!peek) return;
+  // Stop the download as well as the sound: a paused <video> that is still
+  // buffering a 300MB source keeps pulling it over the network.
+  peek.node.querySelector('video')?.pause();
+  peek.node.remove();
+  peek = null;
+}
+
+async function showPeek(rel) {
+  if (!peek) return;
+  const asset = state.project.assets.find((a) => a.rel === rel);
+  if (!asset) return;
+  peek.rel = rel;
+  peek.stage.replaceChildren(h('div.peek__wait.m', {}, 'LOADING…'));
+  paintPeekBar();
+
+  let src;
+  try {
+    src = await mediaSrc(state.project.id, rel);
+  } catch (e) {
+    if (peek?.rel === rel) peek.stage.replaceChildren(h('div.peek__wait.m', {}, String(e.message || e)));
+    return;
+  }
+  // Arrowing quickly means several of these are in flight at once; only the
+  // one still being asked for is allowed to paint.
+  if (peek?.rel !== rel) return;
+
+  if (asset.kind === 'video') {
+    mountVideo(rel, src, false);
+  } else {
+    peek.stage.replaceChildren(h('img.peek__media', { src, alt: asset.name }));
+  }
+}
+
+/**
+ * The original first, a transcoded proxy second.
+ *
+ * Plenty of what comes off the NAS is already h.264 mp4 and plays outright.
+ * The rest — ProRes, most .mov, HEVC, which is most of what a camera writes —
+ * the webview cannot decode at all, and says so with a `error` event and
+ * MEDIA_ERR_SRC_NOT_SUPPORTED rather than by failing to load. That is the
+ * signal to go and make a preview, which is a real transcode and takes as long
+ * as it takes.
+ */
+function mountVideo(rel, src, isProxy) {
+  const video = h('video.peek__media', { src, controls: true, loop: true, playsinline: true });
+
+  video.addEventListener('error', async () => {
+    if (peek?.rel !== rel || isProxy) {
+      // The proxy failed too — there is nothing else to try.
+      if (peek?.rel === rel) peek.stage.replaceChildren(h('div.peek__wait.m', {}, 'THIS FILE CANNOT BE PREVIEWED'));
+      return;
+    }
+    peek.stage.replaceChildren(
+      h('div.peek__wait.m', {}, 'MAKING A PREVIEW — A CAMERA MASTER TAKES A MOMENT…')
+    );
+    try {
+      const proxy = await previewSrc(state.project.id, rel);
+      if (peek?.rel !== rel) return;
+      mountVideo(rel, proxy, true);
+    } catch (e) {
+      if (peek?.rel === rel) peek.stage.replaceChildren(h('div.peek__wait.m', {}, String(e.message || e)));
+    }
+  });
+
+  const show = () => {
+    if (peek?.rel !== rel) return;
+    peek.stage.replaceChildren(video);
+    // Autoplay with sound is blocked until the page has been interacted with;
+    // fall back to muted rather than not playing at all.
+    video.play().catch(() => {
+      video.muted = true;
+      video.play().catch(() => {});
+    });
+  };
+
+  if (isProxy) {
+    // A detached <video> still loads, so the "making a preview" line can stay
+    // up for the whole transcode instead of being replaced by a black box.
+    video.addEventListener('loadeddata', show, { once: true });
+  } else {
+    show();
+  }
+}
+
+function stepPeek(delta) {
+  if (!peek) return;
+  const list = visibleAssets();
+  if (!list.length) return;
+  const i = list.findIndex((a) => a.rel === peek.rel);
+  showPeek(list[(i + delta + list.length) % list.length].rel);
+}
+
+function paintPeekBar() {
+  if (!peek) return;
+  const rel = peek.rel;
+  const asset = state.project.assets.find((a) => a.rel === rel);
+  if (!asset) return;
+  const list = visibleAssets();
+  const at = list.findIndex((a) => a.rel === rel);
+  const placed = roleOf(rel);
+
+  peek.bar.replaceChildren(
+    h(
+      'div.peek__id',
+      {},
+      h('span.m.peek__name', {}, asset.name),
+      h(
+        'span.m.dimmer',
+        { style: { fontSize: '9px', letterSpacing: '0.16em' } },
+        `${asset.kind.toUpperCase()} · ${bytes(asset.size)}${at >= 0 ? ` · ${at + 1} OF ${list.length}` : ''}`
+      )
+    ),
+    h(
+      'div.peek__acts',
+      {},
+      asset.kind !== 'video' &&
+        h(
+          'button.chip',
+          {
+            'aria-pressed': String(state.hero === rel),
+            onClick: () => {
+              set({ hero: state.hero === rel ? null : rel, gallery: withoutRel(state.gallery, rel) });
+              paintPeekBar();
+            },
+          },
+          state.hero === rel ? 'HERO ✓' : 'SET HERO'
+        ),
+      h(
+        'button.chip',
+        {
+          'aria-pressed': String(Boolean(placed) && placed !== 'hero'),
+          onClick: () => {
+            pickAsset(rel);
+            paintPeekBar();
+          },
+        },
+        placed && placed !== 'hero' ? `IN CAROUSEL ${placed} — REMOVE` : 'ADD TO CAROUSEL'
+      ),
+      h('button.chip', { onClick: closePeek }, 'CLOSE  ESC')
+    )
+  );
+}
+
+// One listener for the whole app. Space is the whole point, so it has to be
+// taken before the browser scrolls the sheet — or, on a focused tile, before
+// it fires the button's click and silently adds the asset.
+window.addEventListener('keydown', (e) => {
+  const el = e.target;
+  if (el instanceof HTMLElement && el.closest('input, textarea, [contenteditable="true"]')) return;
+
+  if (peek) {
+    if (e.key === 'Escape' || e.key === ' ') {
+      e.preventDefault();
+      closePeek();
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      stepPeek(1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      stepPeek(-1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      pickAsset(peek.rel);
+      paintPeekBar();
+    }
+    return;
+  }
+
+  if (e.key !== ' ' || state.screen !== 'compose') return;
+  // The cursor wins over focus, the way Finder works — you point at a frame and
+  // hit space. Focus is the fallback for anyone driving it from the keyboard.
+  const rel = hoverRel || (el instanceof HTMLElement ? el.closest('.tile')?.dataset.rel : null);
+  if (!rel) return;
+  e.preventDefault();
+  openPeek(rel);
+});
+
 /** Where a given asset sits in the rows, if it is in the carousel at all. */
 function findRel(rows, rel) {
   for (let r = 0; r < rows.length; r++) {
@@ -1202,9 +1426,7 @@ function treeRows(node, out = []) {
 
 function screenCompose() {
   const p = state.project;
-  const assets = p.assets.filter(
-    (a) => (state.kindFilter === 'all' || a.kind === state.kindFilter) && inFolder(a.dir, state.dirFilter)
-  );
+  const assets = visibleAssets();
   const names = plannedNames(state);
   const heroName = names.find((n) => n.role === 'hero');
   const thumbName = names.find((n) => n.role === 'thumb');
@@ -1316,6 +1538,7 @@ function screenCompose() {
                 return h(
                   'button.tile',
                   {
+                    'data-rel': a.rel,
                     'data-on': badge ? '1' : '0',
                     'data-role': state.hero === a.rel ? 'hero' : '',
                     'data-blocked': state.mode === 'hero' && a.kind === 'video' ? '1' : '0',
@@ -1328,6 +1551,14 @@ function screenCompose() {
                     // drop sites the rail already has, so a tile can go
                     // straight into a split or between two rows without being
                     // added and then moved.
+                    // Quick Look follows the cursor, so the sheet has to say
+                    // what is under it.
+                    onMouseenter: () => {
+                      hoverRel = a.rel;
+                    },
+                    onMouseleave: () => {
+                      if (hoverRel === a.rel) hoverRel = null;
+                    },
                     draggable: true,
                     onDragstart: (e) => {
                       state.drag = { from: 'source', rel: a.rel };

@@ -375,6 +375,58 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .cell:hover .cell__x { opacity: 1; }
 .cell__x:hover { color: var(--cw); }
 
+/* ---- Quick Look ----------------------------------------------------------
+   Lives on <body>, outside #app, because render() replaces #app wholesale and
+   would restart a playing video every time anything else changed. */
+.peek {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.94);
+  padding: 26px 26px 0;
+}
+.peek__stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.peek__media {
+  max-width: 100%;
+  max-height: 100%;
+  /* The frame is the picture's own shape — this is the view you judge a crop
+     in, so nothing here may letterbox or fill. */
+  object-fit: contain;
+  border-radius: var(--tile-radius);
+  background: #000;
+}
+.peek__wait {
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  color: var(--cw45);
+}
+.peek__bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 2px 20px;
+}
+.peek__id { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.peek__name {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--cw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peek__acts { display: flex; gap: 6px; flex: 0 0 auto; }
+
 /* The hero plate accepts a drop from the grid. Green-lit or refused up front,
    rather than letting go and then reading a toast: a video cannot be the hero,
    because the hero doubles as the work-grid thumbnail. */

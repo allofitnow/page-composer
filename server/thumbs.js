@@ -50,6 +50,57 @@ async function build(file, kind, width, out) {
   return out;
 }
 
+const previewKey = (file, mtime) =>
+  crypto.createHash('sha1').update(`${file}|${mtime}|preview`).digest('hex') + '.mp4';
+
+/**
+ * A web-playable proxy of a source video, cached like a thumbnail.
+ *
+ * Quick Look tries the original first, because a lot of what comes off the NAS
+ * is already h.264 mp4 and plays instantly. This is the fallback for what a
+ * webview cannot decode at all — ProRes, most .mov, HEVC — which is most of
+ * what a camera actually writes. 1280 wide at CRF 28 is a preview, not a
+ * deliverable; the real encode still happens in compose.
+ */
+export async function preview(file) {
+  const st = fs.statSync(file);
+  const out = path.join(CACHE_DIR, previewKey(file, st.mtimeMs));
+  if (fs.existsSync(out)) return out;
+  if (inflight.has(out)) return inflight.get(out);
+
+  const job = (async () => {
+    await acquire();
+    try {
+      // Written aside and renamed: a half-encoded file at the real path would
+      // be served on the next request and cached as if it were complete.
+      // `-f mp4` is not optional — ffmpeg picks the container from the output
+      // extension, and this one ends in `.part`.
+      const part = out + '.part';
+      try {
+        await ffmpeg(
+          ['-y', '-i', file,
+           '-vf', "scale='min(1280,iw)':-2",
+           '-c:v', 'libx264', '-crf', '28', '-preset', 'veryfast',
+           '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+           '-c:a', 'aac', '-b:a', '128k',
+           '-f', 'mp4', part],
+          { timeout: 900_000 }
+        );
+      } catch (e) {
+        fs.rmSync(part, { force: true });
+        throw e;
+      }
+      fs.renameSync(part, out);
+      return out;
+    } finally {
+      release();
+      inflight.delete(out);
+    }
+  })();
+  inflight.set(out, job);
+  return job;
+}
+
 /**
  * Cached JPEG thumbnail for a still or a video (poster frame at ~1s).
  * Concurrent requests for the same key share one render.

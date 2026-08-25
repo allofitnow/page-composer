@@ -3,7 +3,7 @@ import path from 'node:path';
 import express from 'express';
 import { config, roots, ROOT_DIR, applyRoots, saveConfig, saveCredentials, reachable } from './config.js';
 import { listProjects, getProject, invalidateAll, decodeId, resolveRel, mergeIds } from './scan.js';
-import { thumbnail } from './thumbs.js';
+import { thumbnail, preview } from './thumbs.js';
 import { ffmpegStatus } from './ffmpeg.js';
 import { parseCopyDoc, validate, TAXONOMY } from './copydoc.js';
 import { startCompose, getJob, plan } from './compose.js';
@@ -86,6 +86,29 @@ app.get('/api/thumb/:id', wrap(async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=86400');
   // The cache lives in `.cache`, and send() 404s any path with a dot-segment
   // unless dotfiles are allowed explicitly.
+  res.sendFile(file, { dotfiles: 'allow' });
+}));
+
+// The ORIGINAL file, for the preview overlay — a thumbnail is a 420px crop and
+// a video has no thumbnail worth scrubbing. sendFile answers Range requests on
+// its own, which a <video> needs to seek at all.
+app.get('/api/file/:id', wrap((req, res) => {
+  const project = getProject(req.params.id);
+  const asset = project.assets.find((a) => a.rel === req.query.rel);
+  if (!asset) return res.status(404).end();
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.sendFile(resolveRel(decodeId(req.params.id), asset.rel), { dotfiles: 'allow' });
+}));
+
+// The proxy for a source video the webview cannot decode. Slow the first time —
+// it is a real transcode — and instant afterwards.
+app.get('/api/preview/:id', wrap(async (req, res) => {
+  const project = getProject(req.params.id);
+  const asset = project.assets.find((a) => a.rel === req.query.rel);
+  if (!asset) return res.status(404).end();
+  if (asset.kind !== 'video') return res.status(400).json({ error: 'not a video' });
+  const file = await preview(resolveRel(decodeId(req.params.id), asset.rel));
+  res.setHeader('Cache-Control', 'private, max-age=86400');
   res.sendFile(file, { dotfiles: 'allow' });
 }));
 

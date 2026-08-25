@@ -102,12 +102,17 @@ fn get_settings(state: State<'_, AppState>) -> CmdResult<Settings> {
 
 #[tauri::command]
 fn save_settings(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     roots: Vec<Root>,
     payload_url: Option<String>,
 ) -> CmdResult<Settings> {
     let mut cfg = state.config.lock().map_err(err)?;
     cfg.apply_roots(roots);
+    // A root added after startup has to reach the asset scope too, or the
+    // preview would work for the roots you launched with and silently fail for
+    // the one you just picked.
+    allow_roots(&app.asset_protocol_scope(), &cfg);
     if let Some(url) = payload_url {
         let trimmed = url.trim().trim_end_matches('/').to_string();
         if !trimmed.is_empty() {
@@ -117,6 +122,18 @@ fn save_settings(
     cfg.save(&state.config_path).map_err(err)?;
     scan::invalidate_all();
     Ok(settings_of(&cfg))
+}
+
+/// Every configured root, into the asset-protocol scope. Failures are ignored
+/// on purpose: an offline NAS share must not stop the app from starting, and
+/// the preview is not what the app is for.
+fn allow_roots(scope: &tauri::scope::fs::Scope, cfg: &Config) {
+    for root in &cfg.roots {
+        if root.path.trim().is_empty() {
+            continue;
+        }
+        let _ = scope.allow_directory(&root.path, true);
+    }
 }
 
 #[tauri::command]
@@ -163,8 +180,12 @@ pub fn run() {
             std::fs::create_dir_all(&cache_dir)?;
 
             // Thumbnails are served straight off disk through the asset
-            // protocol, so the cache directory (and only it) is allowed.
+            // protocol, so the cache directory is allowed...
             app.asset_protocol_scope().allow_directory(&cache_dir, true)?;
+            // ...and so are the asset roots, which the preview overlay reads
+            // from directly. `allow_directory` only records a glob, so this
+            // costs nothing even on a NAS share with a hundred thousand files.
+            allow_roots(&app.asset_protocol_scope(), &cfg);
 
             app.manage(AppState {
                 config: Mutex::new(cfg),
@@ -182,6 +203,8 @@ pub fn run() {
             get_project,
             merge_project_ids,
             media::thumbnail,
+            media::source_path,
+            media::preview_video,
             copydoc::read_copy_doc,
             copydoc::validate_fields,
             compose::plan_compose,

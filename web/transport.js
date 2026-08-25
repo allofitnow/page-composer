@@ -113,6 +113,31 @@ export function thumbImg(projectId, rel, width, attrs = {}) {
 }
 
 /**
+ * The ORIGINAL file, for the Quick Look overlay — a thumbnail is a 420px crop
+ * and a video has no thumbnail worth watching. Over HTTP the URL is known
+ * outright; Tauri has to ask where the file is and convert the path, because
+ * the asset protocol streams it (and answers range requests, which a <video>
+ * needs in order to seek). Handing bytes back through a command instead would
+ * mean loading the whole file into memory before the first frame drew.
+ */
+export async function mediaSrc(projectId, rel) {
+  if (!isTauri) return `/api/file/${projectId}?${q({ rel })}`;
+  const path = await invoke('source_path', { id: projectId, rel });
+  return T.core.convertFileSrc(path);
+}
+
+/**
+ * A web-playable proxy of a source video, for when the original is a format the
+ * webview cannot decode. Slow the first time — it is a real transcode — and
+ * cached after that.
+ */
+export async function previewSrc(projectId, rel) {
+  if (!isTauri) return `/api/preview/${projectId}?${q({ rel })}`;
+  const path = await invoke('preview_video', { id: projectId, rel });
+  return T.core.convertFileSrc(path);
+}
+
+/**
  * Publish steps as they happen. The desktop backend emits an event per step; the
  * HTTP backend still only reports at the end, so there the UI falls back to the
  * elapsed clock alone. Returns an unsubscribe function either way.

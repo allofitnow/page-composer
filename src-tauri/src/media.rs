@@ -15,6 +15,24 @@ use tauri::State;
 #[cfg(windows)]
 const NO_WINDOW: u32 = 0x0800_0000; // CREATE_NO_WINDOW
 
+/// Where an asset actually lives on disk, for the preview overlay.
+///
+/// The webview reads it through the asset protocol rather than through a
+/// command, because a video has to be *streamed* — handing back bytes would
+/// mean loading a 300MB ProRes file into memory before a single frame drew,
+/// and seeking would be impossible. The roots are added to the asset scope at
+/// startup and whenever they change (see lib.rs).
+#[tauri::command]
+pub fn source_path(state: State<'_, AppState>, id: String, rel: String) -> Result<String, String> {
+    let cfg = {
+        let guard = state.config.lock().map_err(|e| e.to_string())?;
+        guard.clone()
+    };
+    let decoded = scan::decode_id(&cfg, &id).map_err(|e| e.to_string())?;
+    let path = decoded.resolve(&rel).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 fn command(bin: &str) -> Command {
     let cmd = Command::new(bin);
     #[cfg(windows)]
@@ -154,6 +172,74 @@ impl Drop for Slot {
         *ACTIVE.lock().unwrap() -= 1;
         FREED.notify_one();
     }
+}
+
+fn preview_key(file: &Path, mtime: f64) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(format!("{}|{}|preview", file.to_string_lossy(), mtime));
+    format!("{}.mp4", hex::encode(hasher.finalize()))
+}
+
+/// A web-playable proxy of a source video, cached beside the thumbnails.
+///
+/// Quick Look tries the original first — a lot of what comes off the NAS is
+/// already h.264 mp4 and plays instantly. This is the fallback for what the
+/// webview cannot decode at all: ProRes, most .mov, HEVC. 1280 wide at CRF 28
+/// is a preview, not a deliverable; the real encode still happens in compose.
+#[tauri::command]
+pub async fn preview_video(
+    state: State<'_, AppState>,
+    id: String,
+    rel: String,
+) -> Result<String, String> {
+    let (cfg, cache_dir) = {
+        let guard = state.config.lock().map_err(|e| e.to_string())?;
+        (guard.clone(), state.cache_dir.clone())
+    };
+    let decoded = scan::decode_id(&cfg, &id).map_err(|e| e.to_string())?;
+    let source = decoded.resolve(&rel).map_err(|e| e.to_string())?;
+    let meta = std::fs::metadata(&source).map_err(|e| format!("{rel}: {e}"))?;
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as f64)
+        .unwrap_or(0.0);
+
+    let out = cache_dir.join(preview_key(&source, mtime));
+    if out.exists() {
+        return Ok(out.to_string_lossy().to_string());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let _slot = Slot::acquire();
+        if out.exists() {
+            return Ok(out.to_string_lossy().to_string());
+        }
+        // Written aside and renamed: a half-encoded file at the real path
+        // would be served on the next request and treated as complete.
+        // `-f mp4` is not optional — ffmpeg picks the container from the output
+        // extension, and this one ends in `.part`.
+        let part = out.with_extension("part");
+        let args: Vec<std::ffi::OsString> = vec![
+            "-y".into(), "-i".into(), (&source).into(),
+            "-vf".into(), "scale='min(1280,iw)':-2".into(),
+            "-c:v".into(), "libx264".into(), "-crf".into(), "28".into(),
+            "-preset".into(), "veryfast".into(),
+            "-pix_fmt".into(), "yuv420p".into(),
+            "-movflags".into(), "+faststart".into(),
+            "-c:a".into(), "aac".into(), "-b:a".into(), "128k".into(),
+            "-f".into(), "mp4".into(), (&part).into(),
+        ];
+        if let Err(e) = run_ffmpeg(&cfg, &args) {
+            let _ = std::fs::remove_file(&part);
+            return Err(e.to_string());
+        }
+        std::fs::rename(&part, &out).map_err(|e| e.to_string())?;
+        Ok(out.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn cache_key(file: &Path, mtime: f64, width: u32) -> String {
