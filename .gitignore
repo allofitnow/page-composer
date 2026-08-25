@@ -16,7 +16,9 @@ config.json
 config.json.*
 
 # Build output. The installer is 3.7MB and is rebuilt from source every time.
-*_setup.exe
+# NB: tauri names it "..._x64-setup.exe" — a HYPHEN before setup, which is why
+# the old *_setup.exe pattern never matched and the binary kept showing up.
+*setup.exe
 *.msi
 *.dmg
 
