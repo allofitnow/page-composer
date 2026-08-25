@@ -93,5 +93,26 @@ check('tag.class syntax sets className', h('div.cell.m', {}).className, 'cell m'
 check('on* registers a listener, not an attribute', h('div', { onClick: () => {} }).listeners, ['click']);
 check('null and undefined props are skipped', Object.keys(h('div', { a: null, b: undefined }).attrs), []);
 
+// An inline full-bleed overlay is a click-eating trap, and a silent one.
+//
+// A drop target rendered as `position: absolute; inset: 0` had no positioned
+// ancestor, so it sized against the VIEWPORT instead of the pane it looked like
+// it was in — and it only rendered when the gallery was empty, which is exactly
+// the state a freshly opened project lands in. The app looked normal and
+// ignored every click in the window.
+//
+// Nothing in a stub DOM can catch that, so this is a source rule instead:
+// full-bleed positioning belongs in style.css, where the containing block is
+// visible next to the rule. Inline styles in app.js may not use `inset`, and
+// may not pair `position: absolute` with a zeroed edge.
+const offenders = [];
+const inlineStyles = src.match(/style:\s*\{[^}]*\}/g) || [];
+for (const style of inlineStyles) {
+  const flat = style.replace(/\s+/g, ' ');
+  if (/\binset\b/.test(flat)) offenders.push(flat);
+  else if (/position:\s*'absolute'/.test(flat) && /(top|right|bottom|left):\s*'0/.test(flat)) offenders.push(flat);
+}
+check('no inline style paints a full-bleed overlay', offenders, []);
+
 console.log(failures ? `\n${failures} FAILED` : '\nall attribute checks passed');
 process.exit(failures ? 1 : 0);

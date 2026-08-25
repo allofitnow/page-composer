@@ -1891,14 +1891,14 @@ function screenCompose() {
               .flatMap((row, r) => [rowGap(r), railRow(row, r, nameAt)])
               .concat(rowGap(-1))
           )
-        : // An empty rail still has to accept the first drop, so the empty
-          // state IS the drop site rather than sitting next to one.
+        : // An empty rail still has to accept the first drop, so the empty state
+          // IS the drop site — one element, in normal flow. It used to be an
+          // absolutely positioned overlay on top of it, which had no positioned
+          // ancestor to size against, so it covered the whole viewport and ate
+          // every click in the app the moment a project was opened.
           h(
-            'div.rows',
-            { 'data-dragging': state.drag !== null ? '1' : '0', style: { flex: '1 1 auto', display: 'flex' } },
-            h('div.empty', { style: { flex: '1 1 auto', fontSize: '9px', pointerEvents: 'none' } }, 'Click or drag tiles to build the carousel'),
-            h('div.rowgap', {
-              style: { position: 'absolute', inset: '0', height: 'auto' },
+            'div.railempty',
+            {
               onDragover: (e) => {
                 if (state.drag === null) return;
                 e.preventDefault();
@@ -1914,7 +1914,8 @@ function screenCompose() {
                 if (from === null) return;
                 set(dropPatch(from, { kind: 'gap', at: -1 }));
               },
-            })
+            },
+            h('div.empty', { style: { fontSize: '9px', pointerEvents: 'none' } }, 'Click or drag tiles to build the carousel')
           ),
       h(
         'div',

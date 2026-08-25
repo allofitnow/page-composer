@@ -290,6 +290,23 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .prow[data-picked] { box-shadow: inset 2px 0 0 var(--cw); }
 
 .rowgap { height: 10px; flex: 0 0 auto; position: relative; }
+/* The empty rail. It takes the drop for the first tile, and it does that IN
+   FLOW: the version that floated over the pane had no positioned ancestor, so
+   `inset: 0` resolved against the viewport and swallowed every click in the
+   window — with an empty rail being exactly the state a freshly opened project
+   lands in. */
+.railempty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed transparent;
+  border-radius: var(--tile-radius);
+}
+.railempty[data-over='1'] {
+  border-color: var(--cw);
+  background: rgba(217, 225, 234, 0.06);
+}
 /* The seam is a 10px gap, which is not a target anyone can hit mid-drag. It
    must NOT be opened up to fix that: growing it on dragstart moved every row
    below it out from under the cursor, so you aimed at one row and dropped on
