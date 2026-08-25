@@ -323,11 +323,14 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .railrow2 { display: flex; flex-direction: column; gap: 5px; }
 .railrow2__strip {
   display: flex;
-  align-items: stretch;
-  height: 62px;
+  /* Slots carry their own height now (the page's, scaled) and sit on the
+     baseline, so the strip must not stretch them back out. */
+  align-items: flex-end;
+  min-height: 24px;
   background: #0d0d0d;
   border-radius: var(--tile-radius);
   overflow: hidden;
+  position: relative;
 }
 /* A row that does not fill 12 columns is a real layout gap on the page. */
 .railrow2[data-partial="1"] .railrow2__strip { outline: 1px dashed var(--cw35); outline-offset: -1px; }
@@ -384,9 +387,39 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .cell[data-drop="left"]::after { left: 0; }
 .cell[data-drop="right"]::after { right: 0; }
 
+/* The bottom edge you drag to change the row's HEIGHT. Sits over the last few
+   pixels of the tiles rather than taking layout of its own — a grip that pushed
+   the rows around while you dragged would move the thing you are aiming at. */
+.hgrip {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 7px;
+  cursor: row-resize;
+  z-index: 3;
+  touch-action: none;
+}
+/* Widen the grab area upward only: the strip clips overflow, so anything below
+   the bottom edge would not receive the pointer anyway. */
+.hgrip::before {
+  content: '';
+  position: absolute; left: 0; right: 0; top: -6px; bottom: 0;
+}
+.hgrip::after {
+  content: '';
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px; height: 1px;
+  background: var(--cw45);
+}
+.hgrip[data-fixed='1'] { cursor: default; }
+.hgrip[data-fixed='1']::after { opacity: 0.3; }
+
 /* The seam you drag to change the ratio. */
 .divider {
   flex: 0 0 auto;
+  /* The strip stopped stretching its children when slots gained real heights;
+     the seam has no height of its own, so say so or it collapses to nothing. */
+  align-self: stretch;
   width: 7px;
   background: #000;
   cursor: col-resize;

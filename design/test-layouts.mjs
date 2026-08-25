@@ -2,7 +2,7 @@
 // It slices the shipped source rather than copying it, so this cannot drift.
 //
 // The composer's gallery must be expressible in Payload's `gallery` field, which
-// offers exactly five layouts. Anything the rail can produce that the CMS cannot
+// offers exactly ten layouts. Anything the rail can produce that the CMS cannot
 // store is a bug, so most of what follows is about staying inside that set.
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -28,7 +28,9 @@ vm.createContext(ctx);
 const EXPORTS =
   '({ LAYOUTS, SEAM_ORDER, SEAM_LEFT, DEFAULT_LAYOUT, layoutOf, slotsFor, spansFor, aspectFor, alignEndFor,' +
   ' normaliseGallery, flatTiles, galleryCount, removeTile, insertIntoRow, moveTile, setLayout,' +
-  ' layoutsForCount, findRel, appendTile })';
+  ' layoutsForCount, findRel, appendTile,' +
+  ' HEIGHT_ORDER, HEIGHT_STEPS, RAIL_W, MIN_STRIP, ratioOf, slotHeightRaw, stripHeight, nearestHeightIndex,' +
+  ' heightLabel })';
 vm.runInContext(code + '\n;' + EXPORTS, ctx);
 const api = vm.runInContext(EXPORTS, ctx);
 
@@ -229,6 +231,50 @@ check('flatTiles walks rows then slots', api.flatTiles(rows).map((t) => [t.rel, 
 ]);
 check('galleryCount counts images, not rows', api.galleryCount(rows), 3);
 check('findRel locates a tile by asset', api.findRel(rows, 'b'), { row: 0, slot: 1 });
+
+// 11. Height. A row's height is not free-form — it is the layout's, so the only
+//     rows with a height CONTROL are the full-width ones. The rail draws each
+//     row at the page's own proportion, scaled by RAIL_W.
+check('the height control offers exactly the one-image layouts',
+  [...api.HEIGHT_ORDER].sort(), api.layoutsForCount(1).sort());
+check('every height step is a real single-slot layout',
+  api.HEIGHT_ORDER.map((l) => api.slotsFor(l)), [1, 1, 1, 1, 1, 1]);
+check('the heights run tallest first',
+  api.HEIGHT_STEPS.every((h, i) => i === 0 || h < api.HEIGHT_STEPS[i - 1]), true);
+
+// The anchor: `full` has drawn at 62px since the rail existed, and RAIL_W is
+// chosen to keep it there. If this moves, every row in the rail resized.
+check('full (16/7) still draws at 62px', api.stripHeight('full'), 62);
+check('the six full-width heights, in rail pixels', api.HEIGHT_STEPS, [80, 71, 62, 47, 37, 24]);
+
+// Proportion is the whole point: a row's pixels must track its aspect, not a
+// table someone typed. 27:4 is the exception — it floors at MIN_STRIP so it
+// stays grabbable, and that is the only layout allowed to lie.
+const proportional = api.HEIGHT_ORDER.filter((l) => l !== 'full-27-4').every(
+  (l) => Math.abs(api.stripHeight(l) - api.RAIL_W / api.ratioOf(api.aspectFor(l, 0))) <= 0.5
+);
+check('rail heights are the page proportion, scaled', proportional, true);
+check('only 27:4 hits the floor',
+  api.HEIGHT_ORDER.filter((l) => api.slotHeightRaw(l, 0) < api.MIN_STRIP), ['full-27-4']);
+
+// A multi-slot row is as tall as its tallest slot — split-8-4's 8-column 16/9
+// tile, not its 4-column square.
+check('a split row is as tall as its tallest slot', api.stripHeight('split-8-4'),
+  Math.round(api.slotHeightRaw('split-8-4', 0)));
+check('the short slot really is shorter',
+  api.slotHeightRaw('split-8-4', 1) < api.slotHeightRaw('split-8-4', 0), true);
+
+// Dragging: down is taller. Starting from `full` at 62px, +20px must land on a
+// taller layout and -30px on a shorter one, and neither may overshoot the ends.
+check('dragging down 20px from 16/7 lands on 16:9', api.HEIGHT_ORDER[api.nearestHeightIndex(82)], 'full-16-9');
+check('dragging up 25px from 16/7 lands on 3.8:1', api.HEIGHT_ORDER[api.nearestHeightIndex(62 - 25)], 'full-19-5');
+check('dragging past the top stops at the tallest', api.HEIGHT_ORDER[api.nearestHeightIndex(400)], 'full-16-9');
+check('dragging past the bottom stops at the shortest', api.HEIGHT_ORDER[api.nearestHeightIndex(-50)], 'full-27-4');
+check('every step snaps back to itself',
+  api.HEIGHT_STEPS.map((h, i) => api.nearestHeightIndex(h) === i), [true, true, true, true, true, true]);
+
+check('the grip labels drop the FULL prefix', api.HEIGHT_ORDER.map(api.heightLabel),
+  ['16:9', '2:1', '16:7', '3:1', '3.8:1', '27:4']);
 
 console.log(failures ? `\n${failures} FAILED` : '\nall gallery-layout checks passed');
 process.exit(failures ? 1 : 0);

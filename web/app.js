@@ -49,12 +49,15 @@ const pad2 = (n) => (n < 10 ? '0' + n : String(n));
 const bytes = (n) =>
   n < 1024 ? n + ' B' : n < 1024 ** 2 ? (n / 1024).toFixed(1) + ' KB' : n < 1024 ** 3 ? (n / 1024 ** 2).toFixed(1) + ' MB' : (n / 1024 ** 3).toFixed(2) + ' GB';
 
-// The gallery is a list of ROWS, and each row picks one of five layouts. This
+// The gallery is a list of ROWS, and each row picks one of ten layouts. This
 // mirrors the Payload `gallery` field exactly (`{ layout, images: [...] }`), so
 // what the rail shows is what the CMS stores — no translation at publish time.
 //
-// The five layouts are the site's, not ours: the geometry below is lifted from
-// frontend/src/components/project/ProjectPage.astro on `integration`.
+// The layouts are the site's, not ours: the geometry below is lifted from
+// frontend/src/components/project/ProjectPage.astro on `integration`. A layout
+// carries BOTH the widths (spans) and the heights (aspects), which is why
+// changing a row's height means moving it to a different layout — there is no
+// free-form height the CMS could store.
 const COLS = 12;
 const LAYOUTS = {
   // Four full-width heights. The aspects here must match ProjectPage.astro's
@@ -89,6 +92,42 @@ const spansFor = (layout) => LAYOUTS[layout]?.spans || [12];
 const aspectFor = (layout, slot) => LAYOUTS[layout]?.aspects?.[slot] ?? null;
 const alignEndFor = (layout, slot) => Boolean(LAYOUTS[layout]?.alignEnd?.[slot]);
 const layoutLabel = (layout) => LAYOUTS[layout]?.label || String(layout).toUpperCase();
+/** Just the ratio: 'FULL 16:9' → '16:9'. */
+const heightLabel = (layout) => layoutLabel(layout).replace(/^FULL /, '');
+
+// ---- heights ------------------------------------------------------------
+// Full width is the only family the CMS gives more than one height, so it is
+// the only place a height CONTROL can go. Ordered tallest first, which is what
+// makes dragging the row's bottom edge downward make the row taller.
+const HEIGHT_ORDER = ['full-16-9', 'full-2-1', 'full', 'full-3-1', 'full-19-5', 'full-27-4'];
+
+// The rail is a miniature of the page, so a row's height has to come off the
+// same numbers the site uses: a slot is (span/12) of the width, and its height
+// is that divided by its aspect. RAIL_W is a stand-in page width, picked so
+// `full` (16/7) lands on the 62px the rail has always been — every other layout
+// is then honestly proportional to it, and a 27:4 row really does read as a
+// band rather than as another 62px block.
+const RAIL_W = 142;
+// Under this a row stops being something you can grab, so it is floored and the
+// slots are scaled to match. Only 27:4 hits it (21px raw).
+const MIN_STRIP = 24;
+
+const ratioOf = (aspect) => {
+  const [w, h] = String(aspect || '1 / 1').split('/').map(Number);
+  return h > 0 ? w / h : 1;
+};
+/** A slot's height in rail pixels, before the row-level floor. */
+const slotHeightRaw = (layout, slot) =>
+  ((RAIL_W * (spansFor(layout)[slot] || COLS)) / COLS) / ratioOf(aspectFor(layout, slot));
+/** The row's height: the tallest slot, floored. */
+const stripHeight = (layout) =>
+  Math.max(MIN_STRIP, Math.round(Math.max(...spansFor(layout).map((_, s) => slotHeightRaw(layout, s)))));
+
+// The heights the drag can land on, in the same order as HEIGHT_ORDER.
+const HEIGHT_STEPS = HEIGHT_ORDER.map(stripHeight);
+/** Which legal height is nearest a dragged pixel height. */
+const nearestHeightIndex = (px) =>
+  HEIGHT_STEPS.reduce((best, h, i) => (Math.abs(h - px) < Math.abs(HEIGHT_STEPS[best] - px) ? i : best), 0);
 
 /**
  * Rows are the source of truth, but selections saved before layouts existed are
@@ -1486,6 +1525,14 @@ function railRow(row, rowIndex, nameAt) {
   const alts = layoutsForCount(row.items.length);
   const cells = [];
 
+  // Every slot at its true height, so a split shows its short tile sitting on
+  // the baseline exactly as the page does, instead of a stretched rectangle
+  // that hides which way the picture will be cropped. `k` only bites on the one
+  // layout short enough to hit the floor.
+  const rawH = spans.map((_, s) => slotHeightRaw(layout, s));
+  const stripH = stripHeight(layout);
+  const k = stripH / Math.max(...rawH);
+
   row.items.forEach((it, slot) => {
     const flat = nameAt(rowIndex, slot);
     if (slot > 0) cells.push(divider(rowIndex, layout));
@@ -1493,9 +1540,23 @@ function railRow(row, rowIndex, nameAt) {
       h(
         'div.cell',
         {
-          style: { flexGrow: spans[slot] || 1, flexBasis: 0 },
+          style: {
+            flexGrow: spans[slot] || 1,
+            flexBasis: 0,
+            height: Math.round(rawH[slot] * k) + 'px',
+            alignSelf: alignEndFor(layout, slot) ? 'flex-end' : 'flex-start',
+          },
           draggable: true,
-          title: (flat?.output || it.rel) + '\n' + layoutLabel(layout) + ' \u00b7 slot ' + (slot + 1) + ' of ' + row.items.length,
+          title:
+            (flat?.output || it.rel) +
+            '\n' +
+            layoutLabel(layout) +
+            ' \u00b7 ' +
+            (aspectFor(layout, slot) || '?').replace(/\s/g, '') +
+            ' \u00b7 slot ' +
+            (slot + 1) +
+            ' of ' +
+            row.items.length,
           onDragstart: (e) => {
             state.drag = { row: rowIndex, slot };
             e.dataTransfer.effectAllowed = 'move';
@@ -1560,7 +1621,7 @@ function railRow(row, rowIndex, nameAt) {
       'data-partial': '0',
       title: layoutLabel(layout) + ' \u2014 ' + row.items.length + ' image' + (row.items.length > 1 ? 's' : ''),
     },
-    h('div.railrow2__strip', {}, cells),
+    h('div.railrow2__strip', { style: { height: stripH + 'px' } }, cells, heightGrip(rowIndex, layout)),
     h(
       'div.railrow2__meta.m',
       {},
@@ -1572,7 +1633,11 @@ function railRow(row, rowIndex, nameAt) {
           h(
             'button.railrow2__fill',
             {
-              title: layoutLabel(layout) + ' - click to cycle the layouts for ' + row.items.length + ' images',
+              title:
+                layoutLabel(layout) +
+                (HEIGHT_ORDER.includes(layout)
+                  ? ' - click to cycle the full-width heights, or drag the row\'s bottom edge'
+                  : ' - click to cycle the layouts for ' + row.items.length + ' images'),
               onClick: () => {
                 const i = alts.indexOf(layout);
                 set({ gallery: setLayout(state.gallery, rowIndex, alts[(i + 1) % alts.length]) });
@@ -1583,6 +1648,55 @@ function railRow(row, rowIndex, nameAt) {
         : h('span.dimmer', {}, layoutLabel(layout))
     )
   );
+}
+
+/**
+ * The bottom edge of a row, dragged to change its HEIGHT — the horizontal twin
+ * of the seam. Same constraint: a free-form height has nowhere to go in the
+ * CMS, so it snaps to the heights that exist. Only full width has more than
+ * one, so on every other layout the grip is inert and says why rather than
+ * disappearing, which would read as a missing feature.
+ */
+function heightGrip(rowIndex, layout) {
+  const at = HEIGHT_ORDER.indexOf(layout);
+
+  return h('div.hgrip', {
+    'data-fixed': at < 0 ? '1' : '0',
+    title:
+      at < 0
+        ? layoutLabel(layout) + ' - this layout has only one height'
+        : heightLabel(layout) + ' - drag to change height (' + HEIGHT_ORDER.map(heightLabel).join(' / ') + ')',
+    onPointerdown: (e) => {
+      if (at < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const startY = e.clientY;
+
+      // Measured from where the drag STARTED, for the same reason the seam is:
+      // each change re-renders the rail and detaches these nodes.
+      const startH = HEIGHT_STEPS[at];
+      let lastAt = at;
+
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {}
+
+      const move = (ev) => {
+        // Down is taller, so the pixel delta adds — HEIGHT_ORDER runs tallest
+        // first, so a taller row is a LOWER index.
+        const best = nearestHeightIndex(startH + (ev.clientY - startY));
+        if (best === lastAt) return;
+        lastAt = best;
+        set({ gallery: setLayout(state.gallery, rowIndex, HEIGHT_ORDER[best]) });
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    },
+  });
 }
 
 // A free-form ratio has nowhere to go in the CMS, so the seam snaps to the
