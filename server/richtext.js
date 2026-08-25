@@ -181,16 +181,34 @@ function blockToSlate(raw) {
 
   const joined = lines.join(' ');
 
+  // A heading that runs to a paragraph is not a heading.
+  // 
+  //    mammoth maps a Word/Docs HEADING STYLE to `## `, so a body paragraph that
+  //    someone styled as Heading 2 in the doc arrives here indistinguishable from a
+  //    real heading — and three published write-ups came out as nothing but
+  //    headings because of it (Renée Rapp, Bad Omens, GRiZ).
+  // 
+  //    The two populations do not overlap. Measured on the live CMS: real headings
+  //    run 16-20 characters ("AOIN Involvement", "Technical Challenges"); the
+  //    mis-styled ones run 499-850. 120 sits between them with room either side.
   const heading = /^(#{1,6})\s+(.*)$/.exec(joined);
-  if (heading) return { type: `h${heading[1].length}`, children: inlineToSlate(heading[2].trim()) };
+  // The marker comes off either way — a demoted block must not publish with its
+  // hashes showing, which would be worse than the heading it replaced.
+  const body = heading ? heading[2].trim() : joined;
+  if (heading && body.length <= MAX_HEADING) {
+    return { type: `h${heading[1].length}`, children: inlineToSlate(body) };
+  }
 
-  if (/^>\s+/.test(joined)) return { type: 'blockquote', children: inlineToSlate(joined.replace(/^>\s+/, '')) };
+  if (/^>\s+/.test(body)) return { type: 'blockquote', children: inlineToSlate(body.replace(/^>\s+/, '')) };
 
   // A block with no type is a paragraph, which is what Slate expects.
-  return { children: inlineToSlate(joined) };
+  return { children: inlineToSlate(body) };
 }
 
 /** The stored paragraph list → the Slate value Payload holds for `writeup`. */
+/** The longest a `## ` block may be and still be treated as a heading. */
+const MAX_HEADING = 120;
+
 export function paragraphsToSlate(paragraphs) {
   return (paragraphs || [])
     .map((p) => blockToSlate(p))

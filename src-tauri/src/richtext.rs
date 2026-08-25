@@ -213,23 +213,45 @@ fn block_to_slate(raw: &str) -> Option<Value> {
 
     let joined = lines.join(" ");
 
+    // A heading that runs to a paragraph is not a heading.
+    // 
+    //    mammoth maps a Word/Docs HEADING STYLE to `## `, so a body paragraph that
+    //    someone styled as Heading 2 in the doc arrives here indistinguishable from a
+    //    real heading — and three published write-ups came out as nothing but
+    //    headings because of it (Renée Rapp, Bad Omens, GRiZ).
+    // 
+    //    The two populations do not overlap. Measured on the live CMS: real headings
+    //    run 16-20 characters ("AOIN Involvement", "Technical Challenges"); the
+    //    mis-styled ones run 499-850. 120 sits between them with room either side.
     let hashes = joined.chars().take_while(|c| *c == '#').count();
-    if hashes >= 1 && hashes <= 6 && joined.chars().nth(hashes) == Some(' ') {
+    let marked = hashes >= 1 && hashes <= 6 && joined.chars().nth(hashes) == Some(' ');
+    // The marker comes off either way — a demoted block must not publish with
+    // its hashes showing, which would be worse than the heading it replaced.
+    let body: String = if marked {
+        joined.chars().skip(hashes + 1).collect::<String>().trim().to_string()
+    } else {
+        joined.clone()
+    };
+    if marked && body.chars().count() <= MAX_HEADING {
         return Some(json!({
             "type": format!("h{hashes}"),
-            "children": inline_to_slate(joined[hashes + 1..].trim()),
+            "children": inline_to_slate(&body),
         }));
     }
 
-    if let Some(q) = joined.strip_prefix("> ") {
+    if let Some(q) = body.strip_prefix("> ") {
         return Some(json!({ "type": "blockquote", "children": inline_to_slate(q) }));
     }
 
     // A block with no type is a paragraph, which is what Slate expects.
-    Some(json!({ "children": inline_to_slate(&joined) }))
+    Some(json!({ "children": inline_to_slate(&body) }))
 }
 
 /// The stored paragraph list → the Slate value Payload holds for `writeup`.
+/// The longest a `## ` block may be and still be treated as a heading.
+/// See the note in `block_to_slate`.
+const MAX_HEADING: usize = 120;
+
 pub fn paragraphs_to_slate(paragraphs: &[String]) -> Vec<Value> {
     paragraphs.iter().filter_map(|p| block_to_slate(p)).collect()
 }
@@ -277,6 +299,32 @@ mod tests {
         assert_eq!(out[1]["type"], "h2");
         // The italics survived rather than reaching the site as literal asterisks.
         assert_eq!(out[0]["children"][1], json!({"text": "From Zero", "italic": true}));
+    }
+
+    /// mammoth turns a Word paragraph STYLED as Heading 2 into "## <paragraph>",
+    /// which is how three published write-ups came out as nothing but headings.
+    /// Real headings and mis-styled paragraphs do not overlap in length: on the
+    /// live CMS the real ones run 16-20 characters and the broken ones 499-850.
+    #[test]
+    fn a_paragraph_styled_as_a_heading_is_still_a_paragraph() {
+        let real = paragraphs_to_slate(&["## AOIN Involvement".to_string()]);
+        assert_eq!(real[0]["type"], "h2");
+
+        // The opening of the Renée Rapp write-up, as mammoth delivered it.
+        let long = format!("## {}", "For Renee Rapp's Bite Me Tour, All Of It Now worked alongside our client to develop the creative and technical approach for a show built almost entirely around real-time Notch camera content.");
+        let out = paragraphs_to_slate(&[long]);
+        assert!(out[0].get("type").is_none(), "a 190-character heading is a paragraph");
+        // ...and the hashes must not survive into the text.
+        let text = out[0]["children"][0]["text"].as_str().unwrap();
+        assert!(text.starts_with("For Renee Rapp"), "got {text}");
+    }
+
+    #[test]
+    fn the_heading_cutoff_is_where_it_says_it_is() {
+        let at = format!("## {}", "x".repeat(MAX_HEADING));
+        assert_eq!(paragraphs_to_slate(&[at])[0]["type"], "h2");
+        let over = format!("## {}", "x".repeat(MAX_HEADING + 1));
+        assert!(paragraphs_to_slate(&[over])[0].get("type").is_none());
     }
 
     #[test]

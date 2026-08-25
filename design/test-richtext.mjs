@@ -105,5 +105,19 @@ const everything = paragraphsToSlate([
 ]);
 check('nothing is emitted that the site cannot render', walk(everything), []);
 
+// mammoth maps a Word/Docs HEADING STYLE to `## `, so a body paragraph someone
+// styled as Heading 2 arrives indistinguishable from a real heading — which is
+// how three write-ups reached the site as nothing but headings. Length separates
+// them cleanly: on the live CMS real headings run 16-20 characters and the
+// mis-styled ones 499-850.
+const longLine = "For Renee Rapp's Bite Me Tour, All Of It Now worked alongside our client to develop the creative and technical approach for a show built almost entirely around real-time Notch camera content.";
+check('a short ## line is a heading', paragraphsToSlate(['## AOIN Involvement'])[0].type, 'h2');
+check('a paragraph-length ## line is a paragraph', paragraphsToSlate([`## ${longLine}`])[0].type, undefined);
+check('...and loses its hashes on the way', paragraphsToSlate([`## ${longLine}`])[0].children[0].text.slice(0, 14), 'For Renee Rapp');
+check('the cutoff is where it says it is', [
+  paragraphsToSlate(['## ' + 'x'.repeat(120)])[0].type,
+  paragraphsToSlate(['## ' + 'x'.repeat(121)])[0].type,
+], ['h2', undefined]);
+
 console.log(failures ? `\n${failures} FAILED` : '\nall rich-text checks passed');
 process.exitCode = failures ? 1 : 0;
