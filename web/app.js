@@ -1123,12 +1123,22 @@ function openPeek(rel) {
     bar
   );
   document.body.append(node);
-  peek = { rel: null, node, stage, trim, bar, head: null, video: null };
+  peek = { rel: null, node, stage, trim, bar, head: null, video: null, blob: null };
   showPeek(rel);
+}
+
+/** A blob URL is held by the process until it is revoked; the proxy is a few
+ *  megabytes, so leaking one per clip previewed adds up over an afternoon. */
+function releaseBlob() {
+  if (peek?.blob) {
+    URL.revokeObjectURL(peek.blob);
+    peek.blob = null;
+  }
 }
 
 function closePeek() {
   if (!peek) return;
+  releaseBlob();
   // Stop the download as well as the sound: a paused <video> that is still
   // buffering a 300MB source keeps pulling it over the network.
   peek.node.querySelector('video')?.pause();
@@ -1140,6 +1150,7 @@ async function showPeek(rel) {
   if (!peek) return;
   const asset = state.project.assets.find((a) => a.rel === rel);
   if (!asset) return;
+  releaseBlob();
   peek.rel = rel;
   peek.head = null;
   peek.video = null;
@@ -1191,7 +1202,11 @@ function mountVideo(rel, src, isProxy) {
     );
     try {
       const proxy = await previewSrc(state.project.id, rel);
-      if (peek?.rel !== rel) return;
+      if (peek?.rel !== rel) {
+        if (proxy.startsWith('blob:')) URL.revokeObjectURL(proxy);
+        return;
+      }
+      if (proxy.startsWith('blob:')) peek.blob = proxy;
       mountVideo(rel, proxy, true);
     } catch (e) {
       if (peek?.rel === rel) peek.stage.replaceChildren(h('div.peek__wait.m', {}, String(e.message || e)));

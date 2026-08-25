@@ -186,6 +186,24 @@ fn preview_key(file: &Path, mtime: f64) -> String {
 /// already h.264 mp4 and plays instantly. This is the fallback for what the
 /// webview cannot decode at all: ProRes, most .mov, HEVC. 1280 wide at CRF 28
 /// is a preview, not a deliverable; the real encode still happens in compose.
+/// The proxy's BYTES, for the webview to wrap in a blob.
+///
+/// The asset protocol serves the source roots happily, but everything in the
+/// app's own cache directory answers 403 — including a freshly generated
+/// thumbnail, so it is the directory and not the file type. A proxy is small by
+/// construction, so shipping it over the IPC as raw bytes is cheap and, unlike
+/// the scope, cannot silently stop working.
+#[tauri::command]
+pub async fn preview_bytes(
+    state: State<'_, AppState>,
+    id: String,
+    rel: String,
+) -> Result<tauri::ipc::Response, String> {
+    let path = preview_video(state, id, rel).await?;
+    let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 #[tauri::command]
 pub async fn preview_video(
     state: State<'_, AppState>,

@@ -133,8 +133,12 @@ export async function mediaSrc(projectId, rel) {
  */
 export async function previewSrc(projectId, rel) {
   if (!isTauri) return `/api/preview/${projectId}?${q({ rel })}`;
-  const path = await invoke('preview_video', { id: projectId, rel });
-  return T.core.convertFileSrc(path);
+  // NOT the asset protocol: it serves the source roots but answers 403 for
+  // anything in the app's own cache directory, where the proxy lives. The bytes
+  // come over the IPC instead and become a blob. Affordable only because the
+  // proxy is small by construction — never do this with an original.
+  const bytes = await invoke('preview_bytes', { id: projectId, rel });
+  return URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'video/mp4' }));
 }
 
 /**
