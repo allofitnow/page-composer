@@ -14,6 +14,24 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tauri::{Emitter, State};
 
+/// In and out points, in seconds from the start of the source. `out` may be
+/// absent, which means "to the end" — a clip trimmed only at the head.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Trim {
+    #[serde(default, rename = "in")]
+    pub start: f64,
+    #[serde(default)]
+    pub out: Option<f64>,
+}
+
+impl Trim {
+    /// Nothing to cut: at the head and either no tail or a tail past the end.
+    fn is_empty(&self) -> bool {
+        self.start <= 0.0 && self.out.is_none()
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
@@ -29,6 +47,8 @@ pub struct Item {
     pub row: Option<u32>,
     #[serde(default)]
     pub slot: Option<u32>,
+    #[serde(default)]
+    pub trim: Option<Trim>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,6 +60,8 @@ pub struct Step {
     pub layout: Option<String>,
     pub row: Option<u32>,
     pub slot: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trim: Option<Trim>,
     pub kind: Kind,
     pub source: String,
     pub source_name: String,
@@ -116,6 +138,9 @@ fn plan(cfg: &Config, project_id: &str, base: &str, items: &[Item], out_dir: &Pa
             layout: it.layout.clone(),
             row: it.row,
             slot: it.slot,
+            // A trim that cuts nothing is dropped here rather than in the
+            // encoder, so the manifest does not claim a clip was trimmed.
+            trim: it.trim.filter(|t| !t.is_empty()),
             kind: asset.kind,
             source: decoded.resolve(&asset.rel)?.to_string_lossy().to_string(),
             source_name: asset.name.clone(),
@@ -175,10 +200,38 @@ fn convert_image(cfg: &Config, step: &Step, role: &str) -> Result<()> {
     Ok(())
 }
 
+/// The seek arguments for a trim, which belong BEFORE `-i`.
+///
+/// `-ss` in front of the input is an input seek: ffmpeg jumps to the keyframe
+/// rather than decoding everything up to it, so trimming the head off a
+/// 40-minute master costs nothing. The tail is `-t <duration>`, not `-to`:
+/// with an input seek in play `-to` has meant different things in different
+/// ffmpeg versions, while `-t` has always been "this many seconds from where
+/// we started".
+fn cut_args(trim: Option<Trim>) -> Vec<std::ffi::OsString> {
+    let mut args: Vec<std::ffi::OsString> = Vec::new();
+    let Some(trim) = trim else { return args };
+    let start = trim.start.max(0.0);
+    if start > 0.0 {
+        args.push("-ss".into());
+        args.push(format!("{start:.3}").into());
+    }
+    if let Some(out) = trim.out {
+        let dur = out - start;
+        if dur > 0.0 {
+            args.push("-t".into());
+            args.push(format!("{dur:.3}").into());
+        }
+    }
+    args
+}
+
 fn convert_video(cfg: &Config, step: &Step) -> Result<()> {
     let v = &cfg.recipe.video;
-    let args: Vec<std::ffi::OsString> = vec![
-        "-y".into(),
+    let mut args: Vec<std::ffi::OsString> = vec!["-y".into()];
+    args.extend(cut_args(step.trim));
+
+    args.extend::<Vec<std::ffi::OsString>>(vec![
         "-i".into(),
         Path::new(&step.source).into(),
         "-vf".into(),
@@ -198,7 +251,7 @@ fn convert_video(cfg: &Config, step: &Step) -> Result<()> {
         "-b:a".into(),
         v.audio.clone().into(),
         Path::new(&step.output_path).into(),
-    ];
+    ]);
     media::run_ffmpeg(cfg, &args)
 }
 
@@ -391,5 +444,62 @@ mod tests {
         assert_eq!(tile.layout.as_deref(), Some("split-8-4"));
         assert_eq!(tile.row, Some(0));
         assert_eq!(tile.slot, Some(1));
+        assert!(tile.trim.is_none());
+
+        // A trimmed clip. `in` is a keyword on this side, so it is renamed —
+        // getting that wrong would silently drop every in point to zero.
+        let cut: Item = serde_json::from_str(
+            r#"{"rel":"c.mov","role":"gallery","trim":{"in":2.5,"out":9}}"#,
+        )
+        .expect("trimmed item must deserialize");
+        assert_eq!(cut.trim.map(|t| t.start), Some(2.5));
+        assert_eq!(cut.trim.and_then(|t| t.out), Some(9.0));
+
+        // Trimmed only at the head: the front end sends no `out` at all.
+        let head: Item =
+            serde_json::from_str(r#"{"rel":"d.mov","role":"gallery","trim":{"in":1}}"#)
+                .expect("head-only trim must deserialize");
+        assert_eq!(head.trim.and_then(|t| t.out), None);
+    }
+
+    fn args(trim: Option<Trim>) -> Vec<String> {
+        cut_args(trim)
+            .into_iter()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn an_untrimmed_clip_gets_no_seek() {
+        assert!(args(None).is_empty());
+        assert!(args(Some(Trim { start: 0.0, out: None })).is_empty());
+    }
+
+    #[test]
+    fn the_head_is_an_input_seek() {
+        assert_eq!(args(Some(Trim { start: 2.0, out: None })), vec!["-ss", "2.000"]);
+    }
+
+    /// The tail is a DURATION from the in point, not an absolute out point —
+    /// the bug this pins is `-t 5` on a 2..5 trim, which would keep 7 seconds.
+    #[test]
+    fn the_tail_is_a_duration_from_the_in_point() {
+        assert_eq!(
+            args(Some(Trim { start: 2.0, out: Some(5.0) })),
+            vec!["-ss", "2.000", "-t", "3.000"]
+        );
+        assert_eq!(args(Some(Trim { start: 0.0, out: Some(4.5) })), vec!["-t", "4.500"]);
+    }
+
+    #[test]
+    fn an_out_point_before_the_in_point_cuts_nothing_rather_than_erroring() {
+        assert_eq!(args(Some(Trim { start: 5.0, out: Some(2.0) })), vec!["-ss", "5.000"]);
+    }
+
+    #[test]
+    fn a_trim_that_cuts_nothing_is_dropped_from_the_plan() {
+        assert!(Trim { start: 0.0, out: None }.is_empty());
+        assert!(!Trim { start: 0.1, out: None }.is_empty());
+        assert!(!Trim { start: 0.0, out: Some(3.0) }.is_empty());
     }
 }

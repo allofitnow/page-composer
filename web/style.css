@@ -366,6 +366,13 @@ textarea.field { resize: vertical; line-height: 1.6; }
   background: rgba(0, 0, 0, 0.7); border: 1px solid var(--cw45);
   font-size: 8px; letter-spacing: 0.12em; padding: 2px 4px 1px; color: var(--cw);
 }
+/* A trimmed clip says so on the tile — the rail is where you look to see what
+   the page is made of, and "which of these did I cut" is otherwise invisible. */
+.cell__trim {
+  position: absolute; bottom: 5px; right: 5px;
+  background: var(--cw); color: #000;
+  font-size: 8px; letter-spacing: 0.12em; padding: 2px 4px 1px;
+}
 .cell__x {
   position: absolute; top: 4px; right: 4px;
   color: var(--cw45); opacity: 0;
@@ -408,6 +415,28 @@ textarea.field { resize: vertical; line-height: 1.6; }
   letter-spacing: 0.22em;
   color: var(--cw45);
 }
+/* The trim strip: two marks and what they leave. The scrubbing is the video's
+   own control — this only shows the kept span and the playhead inside it. */
+.peek__trim { flex: 0 0 auto; display: flex; flex-direction: column; gap: 9px; padding-top: 14px; }
+.trimbar {
+  position: relative;
+  height: 8px;
+  background: #1a1d21;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.trimbar__keep {
+  position: absolute; top: 0; bottom: 0;
+  background: var(--cw45);
+  border-radius: 4px;
+}
+.trimbar__head {
+  position: absolute; top: -3px; bottom: -3px;
+  width: 2px;
+  background: var(--cw);
+}
+.peek__trimacts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
 .peek__bar {
   flex: 0 0 auto;
   display: flex;

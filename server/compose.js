@@ -39,6 +39,9 @@ export function plan({ project, base, items, outDir }) {
       layout: it.layout || null,
       row: it.row ?? null,
       slot: it.slot ?? null,
+      // A trim that cuts nothing is dropped here rather than in the encoder, so
+      // the manifest does not claim a clip was trimmed.
+      trim: it.trim && (it.trim.in > 0 || it.trim.out != null) ? it.trim : null,
       kind: asset.kind,
       source: resolveRel(decodeId(project.id), it.rel),
       sourceName: asset.name,
@@ -66,8 +69,24 @@ async function convertImage(step, role) {
 
 async function convertVideo(step) {
   const v = config.recipe.video;
+  // `-ss` goes BEFORE `-i`, which makes it an input seek — ffmpeg jumps to the
+  // keyframe instead of decoding everything up to it, so trimming the head of a
+  // 40-minute master costs nothing. The tail is `-t <duration>` after the input,
+  // not `-to`: with an input seek in play `-to` has meant different things in
+  // different ffmpeg versions, while `-t` has always been "this many seconds
+  // from where we started".
+  const cut = [];
+  if (step.trim) {
+    const start = Math.max(0, Number(step.trim.in) || 0);
+    if (start > 0) cut.push('-ss', start.toFixed(3));
+    if (step.trim.out != null) {
+      const dur = Number(step.trim.out) - start;
+      if (dur > 0) cut.push('-t', dur.toFixed(3));
+    }
+  }
   await ffmpeg([
     '-y',
+    ...cut,
     '-i', step.source,
     '-vf', `scale='min(${v.maxWidth},iw)':-2`,
     '-c:v', 'libx264',

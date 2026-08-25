@@ -221,6 +221,9 @@ function selectedItems(state) {
       layout: t.layout,
       row: t.row,
       slot: t.slot,
+      // Stills ignore it, but sending a trim for one would put a seek in front
+      // of an image conversion and read as a bug in the manifest.
+      trim: kindOf(t.rel) === 'video' ? state.trims[t.rel] : undefined,
     })
   );
   return out;
@@ -245,6 +248,9 @@ const state = {
   view: 'grid',
   collapsed: new Set(),
   gallery: [],
+  // In/out points per asset, keyed by rel rather than by row and slot, so a
+  // trim survives the tile being moved, split, pulled out and put back.
+  trims: {},
   base: '',
   baseTouched: false,
   outDir: '',
@@ -276,6 +282,7 @@ function persist() {
     JSON.stringify({
       hero: state.hero,
       gallery: state.gallery,
+      trims: state.trims,
       base: state.baseTouched ? state.base : '',
       outDir: state.outDir,
       fields: state.fields,
@@ -1028,6 +1035,9 @@ async function openProject(id) {
       .map((r) => ({ ...r, items: r.items.filter((it) => known.has(it.rel)) }))
       .filter((r) => r.items.length)
       .map((r) => ({ ...r, layout: r.items.length === slotsFor(r.layout) ? r.layout : (layoutsForCount(r.items.length)[0] || DEFAULT_LAYOUT) })),
+    // Trims for assets that are no longer in the project would linger in
+    // storage forever and badge nothing; drop them on the way back in.
+    trims: Object.fromEntries(Object.entries(saved.trims || {}).filter(([rel]) => known.has(rel))),
     base: saved.base || project.slug,
     baseTouched: Boolean(saved.base),
     outDir: saved.outDir || '',
@@ -1097,6 +1107,7 @@ function openPeek(rel) {
   if (!rel || !state.project) return;
   if (peek) return showPeek(rel);
   const stage = h('div.peek__stage');
+  const trim = h('div.peek__trim');
   const bar = h('div.peek__bar');
   const node = h(
     'div.peek',
@@ -1108,10 +1119,11 @@ function openPeek(rel) {
       },
     },
     stage,
+    trim,
     bar
   );
   document.body.append(node);
-  peek = { rel: null, node, stage, bar };
+  peek = { rel: null, node, stage, trim, bar, head: null, video: null };
   showPeek(rel);
 }
 
@@ -1129,7 +1141,10 @@ async function showPeek(rel) {
   const asset = state.project.assets.find((a) => a.rel === rel);
   if (!asset) return;
   peek.rel = rel;
+  peek.head = null;
+  peek.video = null;
   peek.stage.replaceChildren(h('div.peek__wait.m', {}, 'LOADING…'));
+  peek.trim.replaceChildren();
   paintPeekBar();
 
   let src;
@@ -1162,6 +1177,8 @@ async function showPeek(rel) {
  */
 function mountVideo(rel, src, isProxy) {
   const video = h('video.peek__media', { src, controls: true, loop: true, playsinline: true });
+  peek.video = video;
+  watchTrim(video, rel);
 
   video.addEventListener('error', async () => {
     if (peek?.rel !== rel || isProxy) {
@@ -1184,6 +1201,7 @@ function mountVideo(rel, src, isProxy) {
   const show = () => {
     if (peek?.rel !== rel) return;
     peek.stage.replaceChildren(video);
+    paintPeekTrim();
     // Autoplay with sound is blocked until the page has been interacted with;
     // fall back to muted rather than not playing at all.
     video.play().catch(() => {
@@ -1199,6 +1217,105 @@ function mountVideo(rel, src, isProxy) {
   } else {
     show();
   }
+}
+
+/** m:ss.s — long enough to be exact, short enough to sit in a chip. */
+const clock = (sec) => {
+  const s = Math.max(0, Number(sec) || 0);
+  return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+};
+
+/** The stored trim for an asset, or null when it is untrimmed. */
+const trimOf = (rel) => state.trims[rel] || null;
+
+function setTrim(rel, next) {
+  const trims = { ...state.trims };
+  // A trim that cuts nothing is deleted, not stored as zeroes — otherwise every
+  // clip ever opened would carry a trim and the rail would badge all of them.
+  if (!next || (!(next.in > 0) && next.out == null)) delete trims[rel];
+  else trims[rel] = next;
+  set({ trims });
+  paintPeekTrim();
+}
+
+/**
+ * In and out points for the clip on screen.
+ *
+ * The video's own controls do the scrubbing — this is only the two marks and
+ * what they leave. Playback loops the KEPT span, so what you watch is what
+ * compose will encode rather than a pair of numbers you have to trust.
+ */
+function paintPeekTrim() {
+  if (!peek?.trim) return;
+  const video = peek.video;
+  const rel = peek.rel;
+  const asset = state.project.assets.find((a) => a.rel === rel);
+
+  if (!video || !asset || asset.kind !== 'video' || !isFinite(video.duration)) {
+    peek.trim.replaceChildren();
+    return;
+  }
+
+  const dur = video.duration;
+  const t = trimOf(rel) || {};
+  const inAt = Math.min(Math.max(0, t.in || 0), dur);
+  const outAt = t.out == null ? dur : Math.min(t.out, dur);
+  const pct = (v) => `${(v / dur) * 100}%`;
+
+  const keep = h('div.trimbar__keep', { style: { left: pct(inAt), width: pct(Math.max(0, outAt - inAt)) } });
+  const head = h('div.trimbar__head', { style: { left: pct(video.currentTime || 0) } });
+  const bar = h(
+    'div.trimbar',
+    {
+      title: 'Click to scrub',
+      onClick: (e) => {
+        const box = e.currentTarget.getBoundingClientRect();
+        video.currentTime = ((e.clientX - box.left) / box.width) * dur;
+      },
+    },
+    keep,
+    head
+  );
+  peek.head = head;
+
+  const chip = (label, on, fn) => h('button.chip', { 'aria-pressed': String(Boolean(on)), onClick: fn }, label);
+  const kept = Math.max(0, outAt - inAt);
+
+  peek.trim.replaceChildren(
+    bar,
+    h(
+      'div.peek__trimacts',
+      {},
+      chip('SET IN  I', inAt > 0, () => setTrim(rel, { in: video.currentTime, out: t.out == null ? null : Math.max(t.out, video.currentTime) })),
+      chip('SET OUT  O', t.out != null, () => setTrim(rel, { in: Math.min(inAt, video.currentTime), out: video.currentTime })),
+      h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.14em' } },
+        `IN ${clock(inAt)}   OUT ${clock(outAt)}   KEEPS ${clock(kept)} OF ${clock(dur)}`),
+      trimOf(rel) && chip('CLEAR', false, () => setTrim(rel, null))
+    )
+  );
+}
+
+/** Keeps the playhead on the bar, and loops the kept span rather than the file. */
+function watchTrim(video, rel) {
+  video.addEventListener('loadedmetadata', () => {
+    const t = trimOf(rel);
+    if (t?.in > 0) video.currentTime = t.in;
+    paintPeekTrim();
+  });
+  video.addEventListener('timeupdate', () => {
+    if (peek?.rel !== rel) return;
+    const t = trimOf(rel);
+    const dur = video.duration;
+    if (t && isFinite(dur)) {
+      const out = t.out == null ? dur : t.out;
+      // A hair of slack: timeupdate fires every ~250ms, so an exact compare
+      // would sail past the out point and only catch it on the next tick.
+      if (video.currentTime >= out - 0.02 || video.currentTime < (t.in || 0) - 0.5) {
+        video.currentTime = t.in || 0;
+      }
+    }
+    if (peek.head && isFinite(dur)) peek.head.style.left = `${(video.currentTime / dur) * 100}%`;
+  });
 }
 
 function stepPeek(delta) {
@@ -1281,6 +1398,18 @@ window.addEventListener('keydown', (e) => {
       e.preventDefault();
       pickAsset(peek.rel);
       paintPeekBar();
+    } else if (e.key === 'i' || e.key === 'I' || e.key === 'o' || e.key === 'O') {
+      // The NLE keys, because that is what anyone reaching for a trim already
+      // has in their hands.
+      const video = peek.video;
+      if (!video || !isFinite(video.duration)) return;
+      e.preventDefault();
+      const t = trimOf(peek.rel) || {};
+      if (e.key.toLowerCase() === 'i') {
+        setTrim(peek.rel, { in: video.currentTime, out: t.out == null ? null : Math.max(t.out, video.currentTime) });
+      } else {
+        setTrim(peek.rel, { in: Math.min(t.in || 0, video.currentTime), out: video.currentTime });
+      }
     }
     return;
   }
@@ -1954,6 +2083,12 @@ function railRow(row, rowIndex, nameAt) {
         thumb(it.rel, 320, { alt: '', draggable: 'false' }),
         h('span.cell__num.m', {}, pad2((flat?.n ?? 0) + 1)),
         h('span.cell__span.m', {}, spans[slot] === COLS ? 'FULL' : spans[slot] + '/' + COLS),
+        state.trims[it.rel] &&
+          h(
+            'span.cell__trim.m',
+            { title: `TRIMMED ${clock(state.trims[it.rel].in || 0)} → ${state.trims[it.rel].out == null ? 'END' : clock(state.trims[it.rel].out)}` },
+            'TRIM'
+          ),
         h(
           'button.cell__x',
           {
