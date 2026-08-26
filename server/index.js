@@ -7,7 +7,7 @@ import { thumbnail, preview, cmsThumb } from './thumbs.js';
 import { ffmpegStatus, probe, videoInfo } from './ffmpeg.js';
 import { parseCopyDoc, validate, TAXONOMY } from './copydoc.js';
 import { startCompose, getJob, plan } from './compose.js';
-import { publish, payloadStatus, checkLogin, setCredentials, clearCredentials, serviceCategories, listWorkOrder, saveWorkOrder, cmsProject, cmsMedia, saveCmsGallery } from './payload.js';
+import { publish, uploadComposed, payloadStatus, checkLogin, setCredentials, clearCredentials, serviceCategories, listWorkOrder, saveWorkOrder, cmsProject, cmsMedia, saveCmsGallery } from './payload.js';
 import { safeJoin } from './util.js';
 
 const app = express();
@@ -139,7 +139,10 @@ app.post('/api/validate', wrap((req, res) => res.json(validate(req.body.fields |
 app.post('/api/plan', wrap((req, res) => {
   const project = getProject(req.body.projectId);
   const outDir = req.body.outDir ? safeJoin(project.dir, req.body.outDir) : project.dir;
-  res.json({ outDir, steps: plan({ project, base: req.body.base, items: req.body.items, outDir }) });
+  res.json({
+    outDir,
+    steps: plan({ project, base: req.body.base, items: req.body.items, outDir, indexFrom: req.body.indexFrom || 0 }),
+  });
 }));
 
 app.post('/api/compose', wrap((req, res) => {
@@ -229,6 +232,10 @@ app.get('/api/cms-project/:id', wrap(async (req, res) => res.json(await cmsProje
 
 app.post('/api/cms-project/:id/gallery', wrap(async (req, res) => {
   res.json(await saveCmsGallery(req.params.id, req.body.rows || []));
+}));
+
+app.post('/api/upload-composed', wrap(async (req, res) => {
+  res.json(await uploadComposed({ manifestPath: req.body.manifestPath, alt: req.body.alt || '' }));
 }));
 
 app.post('/api/publish', wrap(async (req, res) => {

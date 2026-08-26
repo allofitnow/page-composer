@@ -15,8 +15,16 @@ export const getJob = (id) => jobs.get(id);
 /**
  * Works out every output filename up front so the UI can show the full plan
  * (and catch collisions) before a single byte is written.
+ *
+ * `indexFrom` is how many assets are ALREADY published under each description —
+ * nought for a fresh page, six when two more are being added to a gallery of
+ * six. It shifts the index and the group size together because the group is
+ * genuinely all of them, published ones included: two additions to six make a
+ * group of eight in which these are seven and eight. Output names are
+ * positional and `uploadMedia` matches on the filename, so an addition that
+ * restarted at 01 would replace a published image with a different picture.
  */
-export function plan({ project, base, items, outDir }) {
+export function plan({ project, base, items, outDir, indexFrom = 0 }) {
   const groups = new Map();
   for (const it of items) {
     const desc = it.description || (it.role === 'gallery' ? 'gallery' : it.role);
@@ -31,7 +39,7 @@ export function plan({ project, base, items, outDir }) {
     const asset = project.assets.find((a) => a.rel === it.rel);
     if (!asset) throw new Error(`asset not in project: ${it.rel}`);
     const ext = asset.kind === 'video' ? 'mp4' : 'webp';
-    const output = buildName(base, desc, idx, groups.get(desc), ext);
+    const output = buildName(base, desc, idx + indexFrom, groups.get(desc) + indexFrom, ext);
     return {
       rel: it.rel,
       role: it.role,
@@ -103,12 +111,12 @@ async function convertVideo(step) {
   ]);
 }
 
-export function startCompose({ projectId, base, items, outDir: outDirRel }) {
+export function startCompose({ projectId, base, items, outDir: outDirRel, indexFrom = 0 }) {
   const project = getProject(projectId);
   const outDir = outDirRel ? safeJoin(project.dir, outDirRel) : project.dir;
   fs.mkdirSync(outDir, { recursive: true });
 
-  const steps = plan({ project, base, items, outDir });
+  const steps = plan({ project, base, items, outDir, indexFrom });
   const id = crypto.randomUUID();
   const bus = new EventEmitter();
   const job = {

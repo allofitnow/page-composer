@@ -1003,6 +1003,11 @@ textarea.field { resize: vertical; line-height: 1.6; }
 }
 .libtile[data-used="1"] .libtile__tag { background: var(--cw); color: #000; border-color: var(--cw); }
 .libtile__name { font-size: 8.5px; letter-spacing: 0.1em; color: var(--cw45); }
+/* Picking off a root is a toggle, not a one-way add, so a tile has to read as
+   picked while the rest of the sheet stays browsable. */
+.libtile[aria-pressed="true"] { opacity: 1; }
+.libtile[aria-pressed="true"] img { outline: 2px solid var(--cw); outline-offset: -2px; }
+.libtile[aria-pressed="true"] .libtile__tag { background: var(--cw); color: #000; border-color: var(--cw); }
 /* The work page is a different job from the 01-05 run, so its tab reads as a
    place rather than a step. */
 .step--mode[aria-current="true"] { background: var(--cw); color: #000; }

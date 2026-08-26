@@ -123,6 +123,50 @@ async function uploadMedia(jwt, file, alt) {
 }
 
 /**
+ * Puts freshly composed files into the CMS and hands back what a gallery row
+ * needs to show them.
+ *
+ * `publish` does this too, but as one leg of a much bigger job: it rebuilds the
+ * whole project document from the manifest — hero, write-up, services, the
+ * entire gallery — which is exactly what must not happen here. The page is
+ * already up and only wants two more pictures on the end, so this uploads and
+ * stops; the rows are arranged on screen and written by `saveCmsGallery`, which
+ * touches the gallery field alone.
+ *
+ * Nothing is overwritten: `plan` numbered these past the end of what is already
+ * published, so every filename is new to the collection.
+ */
+export async function uploadComposed({ manifestPath, alt, onProgress = () => {} }) {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const ok = (manifest.items || []).filter((i) => i.status === 'done');
+  if (!ok.length) throw new Error('nothing composed — every file failed to convert');
+
+  onProgress({ stage: 'login', message: `authenticating with ${config.payload.url}` });
+  const jwt = await login();
+
+  const out = [];
+  for (const item of ok) {
+    const file = path.join(manifest.outDir, item.output);
+    onProgress({ stage: 'upload', message: `uploading ${item.output}` });
+    const up = await uploadMedia(jwt, file, `${alt} — ${item.description || 'asset'}`);
+    onProgress({ stage: 'upload', message: `${up.reused ? 'reused' : up.replaced ? 'replaced' : 'uploaded'} ${up.filename}` });
+
+    // uploadMedia hands back an id, not the document, and a row needs the url
+    // and the mime type to draw itself — so the doc is read back. It also
+    // confirms the file really landed, which a returned id alone does not.
+    const res = await fetch(api(`/media/${encodeURIComponent(up.id)}?depth=0`), {
+      headers: { Authorization: `JWT ${jwt}` },
+    });
+    if (!res.ok) throw new Error(`uploaded ${up.filename} but could not read it back: ${res.status}`);
+    const row = galleryImage(await res.json());
+    if (!row) throw new Error(`uploaded ${up.filename} but the CMS did not return it`);
+    out.push(row);
+  }
+  onProgress({ stage: 'done', message: `${out.length} uploaded` });
+  return out;
+}
+
+/**
  * Where a brand new project lands: the FRONT of the run.
  *
  * It used to be the back (highest order plus one), which was harmless while the

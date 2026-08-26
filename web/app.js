@@ -3672,6 +3672,11 @@ async function openCmsGallery(id) {
     // Its own uploads are what anyone opening this screen wants first, so the
     // library is filled in rather than waiting to be searched.
     if (project.base) loadCmsLibrary(project.base);
+    // Same reasoning for the root: showing the matched folder as chosen while
+    // its contact sheet sat unread would only read as a folder that failed to
+    // open. Both panels arrive filled in.
+    const root = matchingRoot(project.base);
+    if (root) chooseRootProject(root.id);
   } catch (err) {
     set({ cmsGalleryFor: null });
     toast(err.message, 'error');
@@ -3722,6 +3727,307 @@ function addToGallery(item) {
   requestAnimationFrame(() => {
     document.querySelector(`.gcell[data-rel="${item.rel}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   });
+}
+
+/**
+ * How many files the CMS already holds under this base and description.
+ *
+ * The answer decides what the next composed file is called, so it is read off
+ * real filenames rather than assumed. An unnumbered `{base}_gallery.webp` counts
+ * as one: it was composed when it was the only one of its kind, and the next
+ * addition is the second.
+ */
+function publishedCount(base, desc, names) {
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^${esc(slugify(base))}_${esc(slugify(desc))}(\\d*)\\.`, 'i');
+  let most = 0;
+  for (const name of names) {
+    const m = re.exec(name || '');
+    if (m) most = Math.max(most, m[1] ? parseInt(m[1], 10) : 1);
+  }
+  return most;
+}
+
+// Additions are composed into a folder of their own rather than beside the
+// originals. Not tidiness: `start_compose` writes `_compose-manifest.json` into
+// whatever it composes into, and that file is the record of the ORIGINAL run —
+// every asset, the hero, the row each tile sits in. Two additions would replace
+// it with a two-line manifest, and a later publish from 05 would then try to
+// rebuild the whole project out of two gallery tiles and no key image.
+const ADDITIONS_DIR = '_additions';
+
+/**
+ * Compose the picked files off the root, upload them, and put them in the rows.
+ *
+ * Not `publish`: that rebuilds the whole project document from a manifest —
+ * hero, write-up, services, the entire gallery — and this page is already
+ * published. Compose writes the files, upload puts them in the media
+ * collection, and they land as rows to be dragged. Nothing reaches the project
+ * document until SAVE, which writes the gallery field alone.
+ */
+async function addFromRoot() {
+  const g = state.cmsGallery;
+  const r = g?.root;
+  if (!r?.project || !r.picked.length) return;
+  const base = g.project.base;
+  if (!base) {
+    return toast('This project has no upload name to compose against — publish it from 01–05 first', 'error');
+  }
+
+  const say = (message) => {
+    if (state.cmsGallery?.root) {
+      state.cmsGallery.root.log = [...state.cmsGallery.root.log, message];
+      render();
+    }
+  };
+  const stop = (message, kind = 'error') => {
+    if (state.cmsGallery?.root) state.cmsGallery.root.busy = null;
+    render();
+    if (message) toast(message, kind);
+  };
+
+  r.busy = 'checking';
+  r.log = [];
+  render();
+
+  try {
+    // Read the collection again rather than trusting what is on screen: the
+    // library list is whatever the search box last asked for, and a narrowed
+    // list would under-count and send the run straight over a published file.
+    const existing = await rpc.cmsMedia(base);
+    const names = existing.map((m) => m.name);
+    const from = publishedCount(base, 'gallery', names);
+    say(`${from} already published under ${base}_gallery — the additions start at ${pad2(from + 1)}`);
+
+    const picked = r.picked
+      .map((rel) => r.project.assets.find((a) => a.rel === rel))
+      .filter(Boolean);
+    const size = picked.length + from;
+
+    // Belt and braces. The offset should make every one of these new, and if it
+    // has not then something is wrong with the count — so nothing is written.
+    const taken = new Set(names.map((n) => n.toLowerCase()));
+    const planned = picked.map((a, i) =>
+      outName(base, 'gallery', i + from, size, a.kind === 'video' ? 'mp4' : 'webp')
+    );
+    const clash = planned.filter((n) => taken.has(n.toLowerCase()));
+    if (clash.length) {
+      return stop(`${clash[0]} is already in the CMS — composing would replace it. Nothing was written.`);
+    }
+    say(`composing ${planned.join(', ')}`);
+
+    r.busy = 'composing';
+    render();
+    const started = await rpc.startCompose({
+      projectId: r.project.id,
+      base,
+      items: picked.map((a) => ({ rel: a.rel, role: 'gallery', description: 'gallery' })),
+      outDir: ADDITIONS_DIR,
+      indexFrom: from,
+    });
+
+    const manifestPath = await new Promise((resolve, reject) => {
+      let off = () => {};
+      off = onComposeProgress(started.jobId || 'tauri', (evt) => {
+        if (evt.type === 'log') say(evt.message);
+        else if (evt.type === 'step') say(`${evt.step.status} ${evt.step.output}`);
+        else if (evt.type === 'done') {
+          off();
+          const failed = evt.steps.filter((s) => s.status === 'failed');
+          if (failed.length) reject(new Error(`${failed[0].output}: ${failed[0].message || 'failed to convert'}`));
+          else resolve(evt.manifestPath);
+        } else if (evt.type === 'error') {
+          off();
+          reject(new Error(evt.message));
+        }
+      });
+    });
+
+    r.busy = 'uploading';
+    render();
+    const offUpload = onPublishProgress((p) => say(p.message));
+    let added;
+    try {
+      added = await rpc.uploadComposed({ manifestPath, alt: g.project.title });
+    } finally {
+      offUpload();
+    }
+
+    // The rows may have been dragged about while this ran, so they are read
+    // fresh rather than from the closure.
+    if (!state.cmsGallery) return;
+    for (const m of added) addToGallery({ rel: m.id, url: m.url, name: m.name, video: m.video });
+    state.cmsGallery.root.picked = [];
+    state.cmsGallery.root.busy = null;
+    render();
+    toast(`${added.length} added — drag them into place, then SAVE`, 'ok');
+    // The library is now a list short of these, and it is the thing that says
+    // what belongs to this project.
+    loadCmsLibrary(g.library?.query || base);
+  } catch (err) {
+    stop(err.message);
+  }
+}
+
+/**
+ * The folder on the roots a published project was built from.
+ *
+ * The link is the upload name, and it is NOT the slug: `base` is seeded from
+ * the folder's slug in 02 but the field is editable and gets edited, so
+ * `the-kid-laroi` on the NAS is `the-kid-laroi-a-perfect-world-tour` in the CMS.
+ * Every project on the roots is like this — linkin-park, rick-astley,
+ * morgan-wallen — so matching on equality found none of them. The slug is a
+ * prefix of the base, which is the relationship worth looking for.
+ *
+ * Longest first, so `peso-pluma-exodo` wins over a shorter `peso` and the two
+ * Peso jobs cannot be confused for one another. A guess is only ever a
+ * pre-selection: the list is right there to correct it.
+ */
+function matchingRoot(base) {
+  if (!base) return null;
+  return state.projects
+    .filter((p) => p.slug && (base.startsWith(p.slug) || p.slug.startsWith(base)))
+    .sort((a, b) => b.slug.length - a.slug.length)[0];
+}
+
+/** Loads a root project's contact sheet into the gallery screen. */
+async function chooseRootProject(id) {
+  const g = state.cmsGallery;
+  if (!g) return;
+  g.root = { ...(g.root || {}), id, project: null, picked: [], busy: null, log: [], error: null };
+  render();
+  try {
+    const project = await rpc.getProject(id);
+    if (state.cmsGallery?.root?.id === id) {
+      state.cmsGallery.root.project = project;
+      render();
+    }
+  } catch (err) {
+    if (state.cmsGallery?.root?.id === id) {
+      state.cmsGallery.root.error = err.message;
+      render();
+    }
+  }
+}
+
+function rootPanel() {
+  const g = state.cmsGallery;
+  const r = g.root || {};
+  const busy = r.busy;
+  const match = matchingRoot(g.project.base);
+  const chosen = r.id || match?.id || '';
+  // What the composer has already made is not a source. Its outputs sit in the
+  // project folder next to the originals and the scan cannot tell them apart, so
+  // without this the sheet offers `..._gallery01.webp` as something to add — and
+  // picking it would transcode an already-transcoded, already-published file
+  // into `..._gallery09.webp`. They are recognisable by the upload name they
+  // carry, whether they are in the folder itself or in the additions folder.
+  const own = `${slugify(g.project.base)}_`;
+  const composed = (a) =>
+    a.rel.startsWith(`${ADDITIONS_DIR}/`) || a.name.toLowerCase().startsWith(own);
+  const shootable = (r.project?.assets || []).filter((a) => a.kind === 'image' || a.kind === 'video');
+  const assets = shootable.filter((a) => !composed(a));
+  const hidden = shootable.length - assets.length;
+
+  return h(
+    'div',
+    { style: { display: 'flex', flexDirection: 'column', gap: '12px', paddingTop: '22px', borderTop: '1px solid var(--cw)' } },
+    h(
+      'div',
+      { style: { display: 'flex', alignItems: 'baseline', gap: '12px' } },
+      h('span', { style: { fontWeight: 500, fontSize: '20px', letterSpacing: '0.02em' } }, 'Add from a root'),
+      r.picked?.length
+        ? h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.18em' } }, `${r.picked.length} PICKED`)
+        : hidden
+          ? h(
+              'span.m.dimmer',
+              { style: { fontSize: '9px', letterSpacing: '0.18em' } },
+              `${hidden} ALREADY COMPOSED, NOT SHOWN`
+            )
+          : null
+    ),
+    h(
+      'p.m.dimmer',
+      { style: { margin: 0, fontSize: '9.5px', lineHeight: 1.7, letterSpacing: '0.06em', maxWidth: '620px' } },
+      `Files that have never been published. They are transcoded to the same recipe as everything else, written to ${ADDITIONS_DIR}\u2044 in the folder, uploaded, and added as rows to drag into place \u2014 numbered on from what is already up, so nothing published is overwritten. The gallery itself is only written when you SAVE.`
+    ),
+    h(
+      'label',
+      { style: { display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '620px' } },
+      h('span.m.dim', { style: { fontSize: '9px', letterSpacing: '0.18em', flex: '0 0 auto' } }, 'FOLDER'),
+      h(
+        'select.field.m',
+        {
+          // The selection rides on the option, not here: setting `value` as an
+          // attribute on a <select> does nothing.
+          disabled: Boolean(busy),
+          style: { flex: '1 1 auto', fontSize: '10.5px', letterSpacing: '0.06em' },
+          onChange: (e) => chooseRootProject(e.target.value),
+        },
+        h('option', { value: '' }, 'CHOOSE A FOLDER'),
+        state.projects.map((p) =>
+          h(
+            'option',
+            { value: p.id, selected: p.id === chosen ? 'selected' : null },
+            `${p.folder}  \u00b7  ${p.stills} stills, ${p.videos} clips${p.id === match?.id ? '  \u00b7  MATCHES' : ''}`
+          )
+        )
+      )
+    ),
+    r.error ? h('div.empty', {}, r.error) : null,
+    !chosen
+      ? h('div.empty', {}, 'No folder on the roots is named for this project — choose one')
+      : !r.project
+        ? h('div.empty', {}, 'Reading the folder')
+        : assets.length
+          ? h(
+              'div.libgrid',
+              {},
+              assets.map((a) => {
+                const on = r.picked.includes(a.rel);
+                return h(
+                  'button.libtile',
+                  {
+                    'aria-pressed': String(on),
+                    disabled: Boolean(busy),
+                    title: `${a.rel}\nclick to ${on ? 'drop' : 'pick'}`,
+                    onClick: () => {
+                      const p = state.cmsGallery.root;
+                      p.picked = on ? p.picked.filter((x) => x !== a.rel) : [...p.picked, a.rel];
+                      render();
+                    },
+                  },
+                  rootThumb(r.project.id, a.rel, a.mtime),
+                  h('span.libtile__tag.m', {}, on ? 'PICKED' : a.kind === 'video' ? 'VIDEO' : 'STILL'),
+                  h('span.libtile__name.m.trunc', {}, a.name)
+                );
+              })
+            )
+          : h('div.empty', {}, 'Nothing in that folder to compose'),
+    h(
+      'div',
+      { style: { display: 'flex', alignItems: 'center', gap: '14px' } },
+      h(
+        'button.btn',
+        {
+          disabled: Boolean(busy) || !r.picked?.length,
+          onClick: addFromRoot,
+        },
+        busy
+          ? { checking: 'CHECKING THE CMS', composing: 'COMPOSING', uploading: 'UPLOADING' }[busy]
+          : `COMPOSE ${r.picked?.length || 0} AND ADD`
+      ),
+      busy ? h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.18em' } }, 'THIS CAN TAKE A WHILE FOR VIDEO') : null
+    ),
+    r.log?.length
+      ? h(
+          'div.m.dimmer',
+          { style: { fontSize: '9.5px', lineHeight: 1.8, letterSpacing: '0.04em', maxWidth: '620px' } },
+          // The tail only: composing a dozen clips writes more than anyone reads.
+          r.log.slice(-6).map((line) => h('div.trunc', {}, line))
+        )
+      : null
+  );
 }
 
 function libraryPanel() {
@@ -3781,7 +4087,7 @@ function libraryPanel() {
                   title: inUse ? `${m.name}\nalready in this gallery` : `${m.name}\nclick to add`,
                   onClick: () => addToGallery({ rel: m.id, url: m.url, name: m.name, video: m.video }),
                 },
-                workThumb(m.url),
+                workThumb(m.url, 'lib'),
                 h('span.libtile__tag.m', {}, inUse ? 'IN USE' : isKey ? 'KEY IMAGE' : m.video ? 'VIDEO' : 'STILL'),
                 h('span.libtile__name.m.trunc', {}, m.name.replace(/^[^_]*_/, ''))
               );
@@ -3804,7 +4110,7 @@ async function saveCmsGallery() {
       layout: r.layout,
       items: r.images.map((im) => ({ rel: im.id, url: im.url, name: im.name, video: im.video })),
     }));
-    set({ cmsGallery: { project, rows, was: gallerySig(rows), saving: false, library: g.library } });
+    set({ cmsGallery: { project, rows, was: gallerySig(rows), saving: false, library: g.library, root: g.root } });
     toast(`${project.title} gallery saved`, 'ok');
     notify('Gallery saved', `${project.title} — the site is rebuilding`);
   } catch (err) {
@@ -4012,7 +4318,7 @@ function galleryCell(row, ri, slot, item, n) {
       title: `${item.name}\n${layoutLabel(layout)} · slot ${slot + 1} of ${row.items.length}`,
       onPointerdown: startGalleryDrag,
     },
-    workThumb(item.url),
+    workThumb(item.url, 'cell'),
     h('span.gcell__num.m', {}, pad2(n)),
     item.video ? h('span.gcell__vid.m', {}, 'VIDEO') : null,
     h(
@@ -4128,6 +4434,7 @@ function cmsGalleryPanel() {
           )
         : h('div.empty', {}, 'This project has no gallery rows — add one below'),
       libraryPanel(),
+      rootPanel(),
       h('div', { style: { minHeight: '40px' } })
     ),
     h(
@@ -4197,10 +4504,27 @@ function cmsGalleryPanel() {
 // The thumbnails outlive the render that made them. Rebuilding them would mean
 // 24 fresh <img> elements, each blank until its source resolves, so the grid
 // would blink through its pending state every time a count changed.
+//
+// Keyed on WHERE as well as what. These are elements, and an element lives in
+// one place — `append` moves it — so when the library went in below the rows
+// holding the same media, it lifted the thumbnails straight out of the cells
+// above and the gallery came up blank. Two callers, two nodes; the backend
+// caches the thumb on disk, so the second is a cache hit rather than a second
+// transcode.
 const workThumbs = new Map();
-const workThumb = (url) => {
-  if (!workThumbs.has(url)) workThumbs.set(url, cmsThumbImg(url, 420, { alt: '' }));
-  return workThumbs.get(url);
+const workThumb = (url, where = 'grid') => {
+  const key = `${where}\u0000${url}`;
+  if (!workThumbs.has(key)) workThumbs.set(key, cmsThumbImg(url, 420, { alt: '' }));
+  return workThumbs.get(key);
+};
+
+/** The same, for a file on a root rather than one in the CMS. */
+const rootThumb = (projectId, rel, mtime) => {
+  const key = `root\u0000${projectId}\u0000${rel}\u0000${mtime}`;
+  if (!workThumbs.has(key)) {
+    workThumbs.set(key, thumbImg(projectId, rel, 420, { alt: '', 'data-mtime': mtime }));
+  }
+  return workThumbs.get(key);
 };
 
 const workState = (items) => ({ items, ids: items.map((p) => p.id), saving: null, touched: false });

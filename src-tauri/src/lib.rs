@@ -220,6 +220,7 @@ pub fn run() {
             payload::save_work_order,
             payload::cms_project,
             payload::cms_media,
+            payload::upload_composed,
             payload::save_cms_gallery,
             payload::payload_login,
             payload::payload_logout,

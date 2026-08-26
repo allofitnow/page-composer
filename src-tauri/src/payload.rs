@@ -1083,6 +1083,90 @@ fn emit_reorder(app: &tauri::AppHandle, done: usize, total: usize, title: &str) 
     });
 }
 
+/// Puts freshly composed files into the CMS and hands back what a gallery row
+/// needs to show them.
+///
+/// The publish path does this too, but as one leg of a much bigger job: it
+/// rebuilds the entire project document from the manifest — hero, write-up,
+/// services, the whole gallery — which is exactly what must NOT happen here.
+/// The page is already published and only wants two more pictures on the end,
+/// so this uploads and stops. The rows are arranged on screen and saved by
+/// `save_cms_gallery`, which writes the gallery field and nothing else.
+///
+/// Nothing is overwritten: `plan` numbered these past the end of what is
+/// already up, so every filename here is new to the collection.
+#[tauri::command]
+pub async fn upload_composed(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    manifest_path: String,
+    alt: String,
+) -> Result<Vec<GalleryImage>, String> {
+    let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    run_upload_composed(&app, &cfg, &manifest_path, &alt)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn run_upload_composed(
+    app: &tauri::AppHandle,
+    cfg: &Config,
+    manifest_path: &str,
+    alt: &str,
+) -> Result<Vec<GalleryImage>> {
+    let manifest: Value = serde_json::from_str(&std::fs::read_to_string(manifest_path)?)?;
+    let out_dir = manifest["outDir"].as_str().unwrap_or_default().to_string();
+    let items: Vec<&Value> = manifest["items"]
+        .as_array()
+        .map(|a| a.iter().filter(|i| i["status"] == "done").collect())
+        .unwrap_or_default();
+    if items.is_empty() {
+        bail!("nothing composed — every file failed to convert");
+    }
+
+    // Videos are the slow part and they are megabytes each, so this gets the
+    // publish timeout rather than the thirty seconds a read would use.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(600))
+        .build()?;
+    let mut messages = vec![format!("authenticating with {}", cfg.payload.url)];
+    let jwt = login(&client, cfg).await?;
+
+    let mut out = Vec::new();
+    for item in &items {
+        let output = item["output"].as_str().unwrap_or_default();
+        let file = Path::new(&out_dir).join(output);
+        say(app, &mut messages, format!("uploading {output}"));
+        let (id, action, name) = upload_media(
+            &client,
+            cfg,
+            &jwt,
+            &file,
+            &format!("{alt} — {}", item["description"].as_str().unwrap_or("asset")),
+        )
+        .await?;
+        say(app, &mut messages, format!("{action} {name}"));
+
+        // `upload_media` hands back an id, not the document, and a row needs the
+        // url and the mime type to draw itself — so the doc is read back. It
+        // also confirms the file really landed, which a returned id alone does
+        // not.
+        let doc = client
+            .get(api(cfg, &format!("/media/{}?depth=0", urlencode(&id))))
+            .header("Authorization", format!("JWT {jwt}"))
+            .send()
+            .await?
+            .json::<Value>()
+            .await?;
+        out.push(
+            gallery_image(cfg, &doc)
+                .ok_or_else(|| anyhow!("uploaded {name} but the CMS did not return it"))?,
+        );
+    }
+    say(app, &mut messages, format!("{} uploaded", out.len()));
+    Ok(out)
+}
+
 /// Where a brand new project lands: the FRONT of the run.
 ///
 /// It used to be the back (highest order plus one), which was harmless while

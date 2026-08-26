@@ -90,7 +90,23 @@ fn resolve_out_dir(project_dir: &Path, out_dir: &Option<String>) -> Result<PathB
 
 /// Works out every output filename up front so the UI can show the whole plan
 /// (and catch collisions) before a single byte is written.
-fn plan(cfg: &Config, project_id: &str, base: &str, items: &[Item], out_dir: &Path) -> Result<Vec<Step>> {
+///
+/// `index_from` is how many assets are ALREADY published under each
+/// description — nought for a fresh page, six when two more are being added to
+/// a gallery of six. It shifts both the index and the group size because the
+/// group genuinely is all of them: two additions to six make a group of eight
+/// in which these are seven and eight. Shifting the size as well as the index
+/// is also what keeps a lone addition numbered — `build_name` drops the number
+/// from a group of one, and `{base}_gallery.webp` next to a published
+/// `{base}_gallery01.webp` is a different file under a name nothing expects.
+fn plan(
+    cfg: &Config,
+    project_id: &str,
+    base: &str,
+    items: &[Item],
+    out_dir: &Path,
+    index_from: usize,
+) -> Result<Vec<Step>> {
     let project = scan::get_project(cfg, project_id)?;
     // Sources, not one directory: a page may draw assets from several folders,
     // and each rel knows which one it came from.
@@ -128,7 +144,7 @@ fn plan(cfg: &Config, project_id: &str, base: &str, items: &[Item], out_dir: &Pa
             .ok_or_else(|| anyhow!("asset not in project: {}", it.rel))?;
 
         let ext = if asset.kind == Kind::Video { "mp4" } else { "webp" };
-        let output = build_name(base, &desc, idx, group_size[&desc], ext);
+        let output = build_name(base, &desc, idx + index_from, group_size[&desc] + index_from, ext);
         let output_path = out_dir.join(&output);
 
         steps.push(Step {
@@ -163,11 +179,13 @@ pub fn plan_compose(
     base: String,
     items: Vec<Item>,
     out_dir: Option<String>,
+    index_from: Option<usize>,
 ) -> Result<Plan, String> {
     let cfg = state.config.lock().map_err(|e| e.to_string())?.clone();
     let project = scan::get_project(&cfg, &project_id).map_err(|e| e.to_string())?;
     let dir = resolve_out_dir(Path::new(&project.dir), &out_dir).map_err(|e| e.to_string())?;
-    let steps = plan(&cfg, &project_id, &base, &items, &dir).map_err(|e| e.to_string())?;
+    let steps = plan(&cfg, &project_id, &base, &items, &dir, index_from.unwrap_or(0))
+        .map_err(|e| e.to_string())?;
     Ok(Plan {
         out_dir: dir.to_string_lossy().to_string(),
         steps,
@@ -289,6 +307,7 @@ pub async fn start_compose(
     base: String,
     items: Vec<Item>,
     out_dir: Option<String>,
+    index_from: Option<usize>,
 ) -> Result<Plan, String> {
     let cfg = state.config.lock().map_err(|e| e.to_string())?.clone();
     let project = scan::get_project(&cfg, &project_id).map_err(|e| e.to_string())?;
@@ -296,7 +315,8 @@ pub async fn start_compose(
     let dir = resolve_out_dir(&project_dir, &out_dir).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-    let mut steps = plan(&cfg, &project_id, &base, &items, &dir).map_err(|e| e.to_string())?;
+    let mut steps = plan(&cfg, &project_id, &base, &items, &dir, index_from.unwrap_or(0))
+        .map_err(|e| e.to_string())?;
     let reply = Plan {
         out_dir: dir.to_string_lossy().to_string(),
         steps: steps.clone(),
