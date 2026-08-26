@@ -114,5 +114,21 @@ for (const style of inlineStyles) {
 }
 check('no inline style paints a full-bleed overlay', offenders, []);
 
+// The stylesheet carries a handful of one-line utility classes that are applied
+// all over the app — `.grow` alone sits on ten spacers. A new screen naming one
+// of its own containers the same thing raises no error anywhere: it silently
+// restyles every other use, on screens nobody happens to be looking at. That is
+// exactly what a `.grow` gallery row did, so each utility keeps its one rule.
+const css = fs.readFileSync(new URL('../web/style.css', import.meta.url), 'utf8');
+const UTILITIES = ['grow', 'trunc', 'dim', 'dimmer', 'ov', 'm', 'field', 'chip', 'btn', 'step', 'empty', 'scroll', 'screen', 'pane', 'cell', 'tile'];
+const reused = UTILITIES.filter((name) => {
+  // Rules that define the bare class on its own, rather than qualifying it
+  // (`.chip:hover`), descending from it (`.ghead .chip`) or modifying it
+  // (`.btn--ghost`).
+  const bare = new RegExp('(^|[,}])\\s*\\.' + name + '\\s*\\{', 'gm');
+  return (css.match(bare) || []).length > 1;
+});
+check('no utility class is redefined by a screen', reused, []);
+
 console.log(failures ? `\n${failures} FAILED` : '\nall attribute checks passed');
 process.exit(failures ? 1 : 0);

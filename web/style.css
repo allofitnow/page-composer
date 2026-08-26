@@ -808,3 +808,201 @@ textarea.field { resize: vertical; line-height: 1.6; }
 }
 .tile[data-blocked="1"]:hover,
 .lrow[data-blocked="1"]:hover { opacity: 0.18; }
+
+/* ------------------------------------------------------- work page order */
+.wgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-auto-rows: max-content;
+  gap: 14px 12px;
+  padding-bottom: 12px;
+}
+.wtile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 0 5px;
+  cursor: grab;
+  /* The drag is driven by pointer events, so the browser's own text selection
+     and image dragging both have to be out of the way — either one hijacks the
+     gesture halfway through and leaves the tile stranded. */
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.wtile img { -webkit-user-drag: none; user-drag: none; }
+/* The tile being dragged is the one under the cursor, so it reads as picked up
+   rather than as a hole left behind. */
+.wtile[data-lift="1"] {
+  z-index: 5;
+  cursor: grabbing;
+  filter: drop-shadow(0 16px 26px rgba(0, 0, 0, 0.6));
+}
+.wtile[data-lift="1"] .wtile__img { outline: 2px solid var(--cw); outline-offset: -2px; }
+.wgrid[data-dragging="1"] { cursor: grabbing; }
+/* The rest of the grid dims a little, so the run being rearranged stays legible
+   without the moving tile having to shout. */
+.wgrid[data-dragging="1"] .wtile:not([data-lift="1"]) { opacity: 0.62; }
+.wtile__img {
+  position: relative;
+  aspect-ratio: 3 / 2;
+  border-radius: var(--tile-radius);
+  overflow: hidden;
+  background: #0d0d0d;
+  display: flex; align-items: center; justify-content: center;
+}
+.wtile__img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wtile__img img[data-pending],
+.wtile__img img[data-failed] { visibility: hidden; }
+.wtile__img:has(img[data-pending])::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    -45deg, rgba(217, 225, 234, 0.05) 0 8px, rgba(217, 225, 234, 0.02) 8px 16px
+  );
+}
+.wtile__img:has(img[data-failed])::after {
+  content: 'NO PREVIEW';
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em;
+  color: var(--cw35);
+}
+.wtile__pos {
+  position: absolute; top: 8px; left: 13px;
+  background: var(--cw); color: #000;
+  font-size: 9.5px; letter-spacing: 0.14em;
+  padding: 3px 6px 2px;
+  font-variant-numeric: tabular-nums;
+}
+.wtile__moved {
+  position: absolute; top: 8px; right: 13px;
+  background: #000; color: var(--cw);
+  border: 1px solid var(--cw);
+  font-size: 8px; letter-spacing: 0.18em;
+  padding: 3px 5px 2px;
+}
+.wtile__name {
+  font-weight: 500; font-size: 14px; letter-spacing: 0.02em; line-height: 1.2;
+}
+.wtile__meta { font-size: 8.5px; letter-spacing: 0.16em; }
+/* --------------------------------------------------- a published gallery */
+/* NOT `.grow` — that is the app's flex-grow utility and is used on ten
+   spacers across the other screens. */
+.gwrap { display: flex; flex-direction: column; gap: 7px; }
+.ghead { display: flex; align-items: center; gap: 5px; padding-left: 2px; max-width: 620px; }
+.ghead .chip { padding: 3px 7px 2px; font-size: 8px; }
+/* Rows are drawn at the shape the site will build them, which means a
+   full-width 16:7 band is as tall as the column is wide. At the pane's full
+   width that is 490px a row and a four-row gallery runs to two and a half
+   screens — so the column is capped instead of the proportions being faked. */
+.gcells { display: flex; align-items: flex-start; gap: 8px; max-width: 620px; }
+.gcell {
+  position: relative;
+  min-width: 0;
+  border-radius: var(--tile-radius);
+  overflow: hidden;
+  background: #0d0d0d;
+  cursor: grab;
+  /* Pointer events drive the drag, so the browser's text selection and image
+     dragging both have to be out of the way. */
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.gcell img { width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-drag: none; }
+.gcell img[data-pending], .gcell img[data-failed] { visibility: hidden; }
+.gcell:has(img[data-pending])::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    -45deg, rgba(217, 225, 234, 0.05) 0 8px, rgba(217, 225, 234, 0.02) 8px 16px
+  );
+}
+.gcell:has(img[data-failed])::after {
+  content: 'NO PREVIEW';
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; color: var(--cw35);
+}
+.gcell__num {
+  position: absolute; top: 7px; left: 7px;
+  background: var(--cw); color: #000;
+  font-size: 9px; letter-spacing: 0.14em; padding: 3px 6px 2px;
+  font-variant-numeric: tabular-nums;
+}
+.gcell__vid {
+  position: absolute; top: 7px; right: 7px;
+  background: rgba(0, 0, 0, 0.7); border: 1px solid var(--cw45);
+  font-size: 8px; letter-spacing: 0.14em; padding: 3px 5px 2px; color: var(--cw);
+}
+.gcell__x {
+  position: absolute; bottom: 7px; right: 7px;
+  display: flex; padding: 5px;
+  background: rgba(0, 0, 0, 0.72); border: 1px solid var(--cw45); color: var(--cw);
+  opacity: 0;
+  transition: opacity 140ms var(--brand);
+}
+.gcell:hover .gcell__x { opacity: 1; }
+.gcell[data-lift="1"] {
+  z-index: 5;
+  cursor: grabbing;
+  filter: drop-shadow(0 16px 26px rgba(0, 0, 0, 0.6));
+  outline: 2px solid var(--cw); outline-offset: -2px;
+}
+/* The seam between rows. Invisible until something is being dragged, then a
+   place to aim at. */
+.ggap { height: 18px; flex: 0 0 auto; position: relative; }
+.gallery[data-dragging="1"] .ggap::after {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 50%;
+  height: 1px; background: var(--cw35);
+}
+.gallery[data-dragging="1"] .gcell:not([data-lift="1"]) { opacity: 0.62; }
+
+/* A tile that will be written is marked twice: the badge names what happens to
+   it, and the frame makes the set of them countable at a glance. */
+.wtile[data-dirty="1"] .wtile__img { outline: 1px solid var(--cw); outline-offset: -1px; }
+
+/* The CMS library under a gallery: what else this project uploaded. */
+.libgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  grid-auto-rows: max-content;
+  gap: 10px;
+  max-width: 900px;
+  padding-bottom: 8px;
+}
+.libtile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.78;
+  transition: opacity 150ms var(--brand);
+}
+.libtile:hover:not(:disabled) { opacity: 1; }
+.libtile:disabled { cursor: default; opacity: 0.3; }
+.libtile img {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  display: block;
+  border-radius: var(--tile-radius);
+  background: #0d0d0d;
+}
+.libtile img[data-pending], .libtile img[data-failed] { visibility: hidden; }
+.libtile__tag {
+  position: absolute; top: 6px; left: 6px;
+  background: rgba(0, 0, 0, 0.72); border: 1px solid var(--cw45); color: var(--cw);
+  font-size: 7.5px; letter-spacing: 0.16em; padding: 3px 5px 2px;
+}
+.libtile[data-used="1"] .libtile__tag { background: var(--cw); color: #000; border-color: var(--cw); }
+.libtile__name { font-size: 8.5px; letter-spacing: 0.1em; color: var(--cw45); }
+/* The work page is a different job from the 01-05 run, so its tab reads as a
+   place rather than a step. */
+.step--mode[aria-current="true"] { background: var(--cw); color: #000; }

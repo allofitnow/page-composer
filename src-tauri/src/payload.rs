@@ -672,9 +672,427 @@ async fn run_publish(
     })
 }
 
+// ---------------------------------------------------------------------------
+// The WORK page's running order.
+//
+// Reading is unauthenticated on purpose: the collection allows public reads, so
+// the screen opens and shows the real grid before anyone signs in. Writing
+// needs the login, and says so in the UI rather than failing at the end.
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkProject {
+    pub id: String,
+    pub title: String,
+    pub slug: String,
+    pub code: String,
+    pub year: String,
+    pub order: Option<f64>,
+    pub featured: bool,
+    /// Absolute url of the key image, or empty when the project has none.
+    pub image: String,
+}
+
+/// Sorts a project list the way the site builds it: the manual `order` decides,
+/// lowest first, and the year only settles a tie between two projects sharing a
+/// number. Mirrors `getProjects` in frontend/src/lib/payload.ts — if that
+/// comparator changes, this one has to follow, or the app would show an order
+/// the site does not.
+fn sort_like_the_site(list: &mut [WorkProject]) {
+    list.sort_by(|a, b| {
+        let ya: i64 = a.year.trim().parse().unwrap_or(0);
+        let yb: i64 = b.year.trim().parse().unwrap_or(0);
+        a.order
+            .unwrap_or(0.0)
+            .partial_cmp(&b.order.unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(yb.cmp(&ya))
+    });
+}
+
+fn work_project_from(cfg: &Config, doc: &Value) -> Option<WorkProject> {
+    let image = doc["image"]["url"].as_str().unwrap_or_default();
+    Some(WorkProject {
+        id: doc["id"].as_str()?.to_string(),
+        title: doc["title"].as_str().unwrap_or_default().to_string(),
+        slug: doc["slug"].as_str().unwrap_or_default().to_string(),
+        code: doc["code"].as_str().unwrap_or_default().to_string(),
+        year: doc["year"].as_str().unwrap_or_default().to_string(),
+        order: doc["order"].as_f64(),
+        featured: doc["featured"].as_bool().unwrap_or(false),
+        image: if image.is_empty() {
+            String::new()
+        } else if image.starts_with("http") {
+            image.to_string()
+        } else {
+            format!("{}{image}", cfg.payload.url.trim_end_matches('/'))
+        },
+    })
+}
+
+async fn work_order(client: &reqwest::Client, cfg: &Config) -> Result<Vec<WorkProject>> {
+    let res = client
+        .get(api(cfg, "/projects?limit=200&depth=1&sort=order&where[status][equals]=published"))
+        .send()
+        .await?;
+    if !res.status().is_success() {
+        bail!("could not read the work page: {} {}", res.status(), res.text().await.unwrap_or_default());
+    }
+    let body: Value = res.json().await?;
+    let mut list: Vec<WorkProject> = body["docs"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|d| work_project_from(cfg, d)).collect())
+        .unwrap_or_default();
+    sort_like_the_site(&mut list);
+    Ok(list)
+}
+
+#[tauri::command]
+pub async fn list_work_order(state: State<'_, AppState>) -> Result<Vec<WorkProject>, String> {
+    let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    work_order(&client, &cfg).await.map_err(|e| e.to_string())
+}
+
+#[derive(serde::Deserialize)]
+pub struct OrderChange {
+    pub id: String,
+    pub order: f64,
+}
+
+/// Writes the planned `order` values, one document at a time, and reports each
+/// one as it lands.
+///
+/// One at a time is not caution, it is the only correct way: Payload's
+/// afterChange hook runs the site build SYNCHRONOUSLY, so two writes in flight
+/// would be two builds fighting over the same checkout. It also means a write
+/// takes about as long as a build, which is why the progress event exists —
+/// there is nothing else to distinguish a legitimate five-minute save from a
+/// hang.
+///
+/// Only `order` is sent. A partial update leaves `data.title` unset, so the
+/// collection's beforeChange hook returns early and the project's generated
+/// code is left alone; sending the whole document back would put that at risk
+/// for no gain.
+#[tauri::command]
+pub async fn save_work_order(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    changes: Vec<OrderChange>,
+) -> Result<Vec<WorkProject>, String> {
+    let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    let client = reqwest::Client::builder()
+        // A single write waits for a whole Astro build, so this is a build
+        // timeout rather than a request timeout.
+        .timeout(std::time::Duration::from_secs(900))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let jwt = login(&client, &cfg).await.map_err(|e| e.to_string())?;
+
+    let titles: std::collections::HashMap<String, String> = work_order(&client, &cfg)
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|p| (p.id, p.title))
+        .collect();
+
+    let total = changes.len();
+    for (i, change) in changes.iter().enumerate() {
+        let title = titles.get(&change.id).cloned().unwrap_or_else(|| change.id.clone());
+        emit_reorder(&app, i, total, &title);
+        let res = client
+            .patch(api(&cfg, &format!("/projects/{}", change.id)))
+            .header("Authorization", format!("JWT {jwt}"))
+            .json(&json!({ "order": change.order }))
+            .send()
+            .await
+            .map_err(|e| format!("{title}: {e}"))?;
+        if !res.status().is_success() {
+            return Err(format!(
+                "{title}: {} {}",
+                res.status(),
+                res.text().await.unwrap_or_default()
+            ));
+        }
+        emit_reorder(&app, i + 1, total, &title);
+    }
+
+    // Re-read rather than patching the list held in the front end: the CMS is
+    // the thing being edited, so the screen should come back showing what it
+    // actually says.
+    work_order(&client, &cfg).await.map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// One published project's gallery, for rearranging in place.
+//
+// This is the other half of the work-page screen: the running order decides
+// which projects come first, this decides what a project's own page looks like
+// once you are inside it. Nothing is uploaded — every image here is already in
+// the CMS, so a reflow is one document write rather than a re-compose.
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GalleryImage {
+    pub id: String,
+    pub url: String,
+    pub name: String,
+    pub video: bool,
+    pub width: Option<u64>,
+    pub height: Option<u64>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GalleryRow {
+    pub layout: String,
+    pub images: Vec<GalleryImage>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CmsProject {
+    pub id: String,
+    pub title: String,
+    pub slug: String,
+    pub year: String,
+    pub url: String,
+    /// The upload name every file of this project shares, which is how the rest
+    /// of its media is found again. Empty when nothing could be read off.
+    pub base: String,
+    /// The key image, so the library can say so rather than offering it as if
+    /// it were spare.
+    pub key_image: String,
+    pub gallery: Vec<GalleryRow>,
+}
+
+/// The shared half of an upload name.
+///
+/// The composer writes `{base}_{role}{nn}.{ext}` — `linkin-park-from-zero-tour`
+/// plus `_gallery03.mp4` — so everything before the first underscore groups a
+/// project's files. It is not the slug: a slug is `kid-laroi` where the files
+/// are `the-kid-laroi-a-perfect-world-tour`, which is why this is read off a
+/// real filename rather than derived.
+fn upload_base(filename: &str) -> String {
+    match filename.find('_') {
+        Some(at) if at > 0 => filename[..at].to_string(),
+        _ => String::new(),
+    }
+}
+
+fn absolute(cfg: &Config, url: &str) -> String {
+    if url.is_empty() || url.starts_with("http") {
+        url.to_string()
+    } else {
+        format!("{}{url}", cfg.payload.url.trim_end_matches('/'))
+    }
+}
+
+fn gallery_image(cfg: &Config, media: &Value) -> Option<GalleryImage> {
+    // At depth 2 the relation is the media document; a project saved another
+    // way can still leave a bare id behind, and an entry that is only an id has
+    // no url to show, so it is dropped rather than rendered as a hole.
+    let id = media["id"].as_str()?;
+    let mime = media["mimeType"].as_str().unwrap_or_default();
+    let url = media["url"].as_str().unwrap_or_default();
+    Some(GalleryImage {
+        id: id.to_string(),
+        url: absolute(cfg, url),
+        name: media["filename"].as_str().unwrap_or_default().to_string(),
+        video: mime.starts_with("video/"),
+        width: media["width"].as_u64(),
+        height: media["height"].as_u64(),
+    })
+}
+
+#[tauri::command]
+pub async fn cms_project(state: State<'_, AppState>, id: String) -> Result<CmsProject, String> {
+    let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .get(api(&cfg, &format!("/projects/{}?depth=2", urlencode(&id))))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("could not read the project: {}", res.status()));
+    }
+    let doc: Value = res.json().await.map_err(|e| e.to_string())?;
+
+    let gallery = doc["gallery"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    let images: Vec<GalleryImage> = row["images"]
+                        .as_array()
+                        .map(|imgs| imgs.iter().filter_map(|i| gallery_image(&cfg, &i["image"])).collect())
+                        .unwrap_or_default();
+                    let layout = row["layout"].as_str().unwrap_or("full").to_string();
+                    GalleryRow {
+                        layout: if LAYOUTS.contains(&layout.as_str()) { layout } else { "full".into() },
+                        images,
+                    }
+                })
+                // A row whose images all failed to resolve would render as an
+                // empty band nobody could drag out of.
+                .filter(|r| !r.images.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // The key image first, because it is the one file a project is guaranteed
+    // to have; a gallery entry is the fallback for anything odd.
+    let base = [doc["image"]["filename"].as_str().unwrap_or_default()]
+        .into_iter()
+        .chain(
+            doc["gallery"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|r| r["images"].as_array().into_iter().flatten())
+                .map(|i| i["image"]["filename"].as_str().unwrap_or_default()),
+        )
+        .map(upload_base)
+        .find(|b| !b.is_empty())
+        .unwrap_or_default();
+
+    let slug = doc["slug"].as_str().unwrap_or_default().to_string();
+    Ok(CmsProject {
+        id: doc["id"].as_str().unwrap_or(&id).to_string(),
+        title: doc["title"].as_str().unwrap_or_default().to_string(),
+        year: doc["year"].as_str().unwrap_or_default().to_string(),
+        url: format!("{}/work/{slug}", cfg.payload.url.trim_end_matches('/')),
+        base,
+        key_image: doc["image"]["id"].as_str().unwrap_or_default().to_string(),
+        slug,
+        gallery,
+    })
+}
+
+/// Everything in the CMS whose filename contains `query` — the rest of a
+/// project's uploads, so an image taken out of a gallery can be put back and
+/// one that was never used can be brought in.
+///
+/// Nothing is uploaded from here. A file that is not in the CMS yet has to go
+/// through compose and publish, which is a different job entirely.
+#[tauri::command]
+pub async fn cms_media(state: State<'_, AppState>, query: String) -> Result<Vec<GalleryImage>, String> {
+    let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    let query = query.trim().to_string();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .get(api(
+            &cfg,
+            &format!(
+                "/media?limit=200&depth=0&sort=filename&where[filename][like]={}",
+                urlencode(&query)
+            ),
+        ))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("could not read the media library: {}", res.status()));
+    }
+    let body: Value = res.json().await.map_err(|e| e.to_string())?;
+    Ok(body["docs"]
+        .as_array()
+        .map(|docs| docs.iter().filter_map(|m| gallery_image(&cfg, m)).collect())
+        .unwrap_or_default())
+}
+
+#[derive(serde::Deserialize)]
+pub struct SavedRow {
+    pub layout: String,
+    /// Media ids, in slot order.
+    pub images: Vec<String>,
+}
+
+/// Writes a rearranged gallery back.
+///
+/// Only `gallery` is sent. A partial update leaves `data.title` unset, so the
+/// collection's beforeChange hook returns early and the project's generated
+/// code is left alone — the same reason the running order sends only `order`.
+#[tauri::command]
+pub async fn save_cms_gallery(
+    state: State<'_, AppState>,
+    id: String,
+    rows: Vec<SavedRow>,
+) -> Result<CmsProject, String> {
+    let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    let client = reqwest::Client::builder()
+        // The write blocks on a whole Astro build, so this is a build timeout
+        // rather than a request timeout.
+        .timeout(std::time::Duration::from_secs(900))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let jwt = login(&client, &cfg).await.map_err(|e| e.to_string())?;
+
+    let gallery: Vec<Value> = rows
+        .iter()
+        .filter(|r| !r.images.is_empty())
+        .map(|r| {
+            let layout = if LAYOUTS.contains(&r.layout.as_str()) { r.layout.clone() } else { "full".to_string() };
+            json!({
+                "layout": layout,
+                "images": r.images.iter().map(|i| json!({ "image": i })).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+
+    let res = client
+        .patch(api(&cfg, &format!("/projects/{}", urlencode(&id))))
+        .header("Authorization", format!("JWT {jwt}"))
+        .json(&json!({ "gallery": gallery }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!(
+            "gallery write failed: {} {}",
+            res.status(),
+            res.text().await.unwrap_or_default()
+        ));
+    }
+
+    // Read it back rather than trusting the request: the screen should come
+    // back showing what the CMS actually stored.
+    cms_project(state, id).await
+}
+
+fn emit_reorder(app: &tauri::AppHandle, done: usize, total: usize, title: &str) {
+    let app = app.clone();
+    let payload = json!({ "done": done, "total": total, "title": title });
+    tauri::async_runtime::spawn(async move {
+        let _ = app.emit("reorder://progress", payload);
+    });
+}
+
+/// Where a brand new project lands: the FRONT of the run.
+///
+/// It used to be the back (highest order plus one), which was harmless while
+/// the year sort came first and put new work near the top regardless. Now that
+/// `order` decides the page outright, the back would bury every new project at
+/// the bottom of the work grid — so a new page opens the run and can be dragged
+/// from there.
 async fn next_order(client: &reqwest::Client, cfg: &Config, jwt: &str) -> i64 {
     let Ok(res) = client
-        .get(api(cfg, "/projects?limit=1&sort=-order"))
+        .get(api(cfg, "/projects?limit=1&sort=order"))
         .header("Authorization", format!("JWT {jwt}"))
         .send()
         .await
@@ -682,5 +1100,6 @@ async fn next_order(client: &reqwest::Client, cfg: &Config, jwt: &str) -> i64 {
         return 1;
     };
     let Ok(body) = res.json::<Value>().await else { return 1 };
-    body["docs"][0]["order"].as_i64().unwrap_or(0) + 1
+    // floor, so a fractional order left by a drag still yields a value below it
+    body["docs"][0]["order"].as_f64().unwrap_or(1.0).floor() as i64 - 1
 }

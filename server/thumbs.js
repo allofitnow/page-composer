@@ -123,3 +123,47 @@ export async function thumbnail(file, kind, width = 420) {
   inflight.set(out, job);
   return job;
 }
+
+/**
+ * A thumbnail for a file that lives in the CMS rather than on a root.
+ *
+ * The gallery editor shows published projects, and most of what sits in a
+ * gallery is video — so pointing an <img> at the CMS url could never work, and
+ * a poster frame has to be made here the same way it is for a local clip. The
+ * server's own content type decides which it is, with the extension only as a
+ * fallback; a clip mislabelled as a still would fail to decode and read as a
+ * missing thumbnail.
+ */
+export async function cmsThumb(url, width = 420) {
+  const key = crypto.createHash('sha1').update(`cms|${url}|${width}`).digest('hex');
+  const out = path.join(CACHE_DIR, `${key}.jpg`);
+  if (fs.existsSync(out)) return out;
+  if (inflight.has(out)) return inflight.get(out);
+
+  const job = (async () => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${url}: ${res.status}`);
+    const served = res.headers.get('content-type') || '';
+    const isVideo =
+      served.startsWith('video/') ||
+      (!served && /\.(mp4|mov|m4v|webm)$/i.test(new URL(url).pathname));
+    const bytes = Buffer.from(await res.arrayBuffer());
+
+    // ffmpeg reads a file, not a buffer, and it has to seek to find a frame
+    // worth showing — so the clip is staged on disk and removed again whether
+    // or not the frame comes out.
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    const staged = path.join(CACHE_DIR, `${key}.src`);
+    fs.writeFileSync(staged, bytes);
+    await acquire();
+    try {
+      return await build(staged, isVideo ? 'video' : 'image', width, out);
+    } finally {
+      release();
+      fs.rmSync(staged, { force: true });
+    }
+  })().finally(() => inflight.delete(out));
+
+  inflight.set(out, job);
+  return job;
+}

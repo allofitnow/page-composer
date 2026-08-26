@@ -122,11 +122,20 @@ async function uploadMedia(jwt, file, alt) {
   return { id: (await res.json()).doc.id, reused: false, filename: name };
 }
 
+/**
+ * Where a brand new project lands: the FRONT of the run.
+ *
+ * It used to be the back (highest order plus one), which was harmless while the
+ * year sort came first and put new work near the top regardless. Now that
+ * `order` decides the page outright, the back would bury every new project at
+ * the bottom of the work grid.
+ */
 async function nextOrder(jwt) {
-  const res = await fetch(api('/projects?limit=1&sort=-order'), { headers: { Authorization: `JWT ${jwt}` } });
+  const res = await fetch(api('/projects?limit=1&sort=order'), { headers: { Authorization: `JWT ${jwt}` } });
   if (!res.ok) return 1;
   const docs = (await res.json()).docs || [];
-  return (docs[0]?.order || 0) + 1;
+  // floor, so a fractional order left by a drag still yields a value below it
+  return Math.floor(docs[0]?.order ?? 1) - 1;
 }
 
 /**
@@ -286,6 +295,183 @@ export async function resolveServices(names) {
     else unknown.push(name);
   }
   return { ids, unknown };
+}
+
+// ---------------------------------------------------------------------------
+// The WORK page's running order. Reading is unauthenticated -- the collection
+// allows public reads -- so the screen opens before anyone signs in; writing
+// needs the login.
+// ---------------------------------------------------------------------------
+
+/** Absolute url for a populated upload relation, '' when there is none. */
+const imageUrl = (media) => {
+  const url = media?.url;
+  if (!url) return '';
+  return url.startsWith('http') ? url : `${config.payload.url.replace(/\/$/, '')}${url}`;
+};
+
+/**
+ * Published projects in the order the site builds them: the manual `order`
+ * decides, lowest first, and the year only settles a tie between two projects
+ * sharing a number. Mirrors `getProjects` in frontend/src/lib/payload.ts -- if
+ * that comparator changes this has to follow, or the app would show an order
+ * the site does not.
+ */
+export async function listWorkOrder() {
+  const res = await fetch(api('/projects?limit=200&depth=1&sort=order&where[status][equals]=published'));
+  if (!res.ok) throw new Error(`could not read the work page: ${res.status} ${await res.text()}`);
+  const docs = (await res.json()).docs || [];
+  return docs
+    .map((d) => ({
+      id: d.id,
+      title: d.title || '',
+      slug: d.slug || '',
+      code: d.code || '',
+      year: d.year || '',
+      order: typeof d.order === 'number' ? d.order : null,
+      featured: Boolean(d.featured),
+      image: imageUrl(d.image),
+    }))
+    .sort((a, b) => {
+      const oa = a.order ?? 0;
+      const ob = b.order ?? 0;
+      if (oa !== ob) return oa - ob;
+      return (parseInt(b.year, 10) || 0) - (parseInt(a.year, 10) || 0);
+    });
+}
+
+/**
+ * Writes the planned `order` values one at a time.
+ *
+ * One at a time is not caution: Payload's afterChange hook runs the site build
+ * SYNCHRONOUSLY, so two writes in flight would be two builds fighting over the
+ * same checkout. Only `order` is sent -- a partial update leaves `data.title`
+ * unset, so the collection's beforeChange hook returns early and the generated
+ * project code is left alone.
+ */
+export async function saveWorkOrder(changes, onProgress = () => {}) {
+  const jwt = await login();
+  const titles = new Map((await listWorkOrder()).map((p) => [p.id, p.title]));
+  const total = changes.length;
+  for (let i = 0; i < total; i++) {
+    const { id, order } = changes[i];
+    const title = titles.get(id) || id;
+    onProgress({ done: i, total, title });
+    const res = await fetch(api(`/projects/${id}`), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `JWT ${jwt}` },
+      body: JSON.stringify({ order }),
+    });
+    if (!res.ok) throw new Error(`${title}: ${res.status} ${await res.text()}`);
+    onProgress({ done: i + 1, total, title });
+  }
+  // Re-read: the CMS is the thing being edited, so the screen should come back
+  // showing what it actually says.
+  return listWorkOrder();
+}
+
+// ---------------------------------------------------------------------------
+// One published project's gallery, for rearranging in place. Nothing is
+// uploaded -- every image is already in the CMS -- so a reflow is one document
+// write rather than a re-compose.
+// ---------------------------------------------------------------------------
+
+/** The layouts the collection accepts; anything else is rejected by Payload. */
+const GALLERY_LAYOUTS = ['full','full-16-9','full-2-1','full-3-1','full-19-5','full-27-4','two-up','split-8-4','split-5-7','three-up'];
+
+const galleryImage = (media) => {
+  // At depth 2 the relation is the media document. A project saved another way
+  // can leave a bare id behind, and an entry that is only an id has no url to
+  // show, so it is dropped rather than rendered as a hole.
+  if (!media || typeof media !== 'object' || !media.id) return null;
+  return {
+    id: media.id,
+    url: imageUrl(media),
+    name: media.filename || '',
+    video: String(media.mimeType || '').startsWith('video/'),
+    width: media.width ?? null,
+    height: media.height ?? null,
+  };
+};
+
+/**
+ * The shared half of an upload name.
+ *
+ * The composer writes `{base}_{role}{nn}.{ext}` -- `linkin-park-from-zero-tour`
+ * plus `_gallery03.mp4` -- so everything before the first underscore groups a
+ * project's files. It is not the slug: a slug is `kid-laroi` where the files
+ * are `the-kid-laroi-a-perfect-world-tour`.
+ */
+const uploadBase = (filename) => {
+  const at = String(filename || '').indexOf('_');
+  return at > 0 ? String(filename).slice(0, at) : '';
+};
+
+/**
+ * Everything in the CMS whose filename contains `query`. Nothing is uploaded
+ * from here -- a file that is not in the CMS yet has to go through compose and
+ * publish, which is a different job entirely.
+ */
+export async function cmsMedia(query) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  const res = await fetch(api(`/media?limit=200&depth=0&sort=filename&where[filename][like]=${encodeURIComponent(q)}`));
+  if (!res.ok) throw new Error(`could not read the media library: ${res.status}`);
+  return ((await res.json()).docs || []).map(galleryImage).filter(Boolean);
+}
+
+export async function cmsProject(id) {
+  const res = await fetch(api(`/projects/${encodeURIComponent(id)}?depth=2`));
+  if (!res.ok) throw new Error(`could not read the project: ${res.status}`);
+  const doc = await res.json();
+  const gallery = (doc.gallery || [])
+    .map((row) => ({
+      layout: GALLERY_LAYOUTS.includes(row.layout) ? row.layout : 'full',
+      images: (row.images || []).map((i) => galleryImage(i.image)).filter(Boolean),
+    }))
+    // A row whose images all failed to resolve would render as an empty band
+    // nobody could drag out of.
+    .filter((r) => r.images.length);
+  // The key image first, because it is the one file a project is guaranteed to
+  // have; a gallery entry is the fallback for anything odd.
+  const base =
+    [doc.image?.filename, ...(doc.gallery || []).flatMap((r) => (r.images || []).map((i) => i.image?.filename))]
+      .map(uploadBase)
+      .find(Boolean) || '';
+
+  return {
+    id: doc.id ?? id,
+    title: doc.title || '',
+    slug: doc.slug || '',
+    year: doc.year || '',
+    url: `${config.payload.url.replace(/\/$/, '')}/work/${doc.slug || ''}`,
+    base,
+    keyImage: doc.image?.id || '',
+    gallery,
+  };
+}
+
+/**
+ * Writes a rearranged gallery back. Only `gallery` is sent -- a partial update
+ * leaves `data.title` unset, so the collection's beforeChange hook returns early
+ * and the project's generated code is left alone.
+ */
+export async function saveCmsGallery(id, rows) {
+  const jwt = await login();
+  const gallery = (rows || [])
+    .filter((r) => (r.images || []).length)
+    .map((r) => ({
+      layout: GALLERY_LAYOUTS.includes(r.layout) ? r.layout : 'full',
+      images: r.images.map((image) => ({ image })),
+    }));
+  const res = await fetch(api(`/projects/${encodeURIComponent(id)}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `JWT ${jwt}` },
+    body: JSON.stringify({ gallery }),
+  });
+  if (!res.ok) throw new Error(`gallery write failed: ${res.status} ${await res.text()}`);
+  // Read it back rather than trusting the request.
+  return cmsProject(id);
 }
 
 export async function payloadStatus() {

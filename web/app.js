@@ -2,7 +2,7 @@
 // One state object, one render pass per change. Text inputs commit on `change`
 // (blur/enter) rather than `input`, so re-rendering never eats a keystroke.
 
-import { rpc, thumbImg, mediaSrc, previewSrc, probeMedia, onComposeProgress, onPublishProgress, notify, pickFolder, openExternal, isTauri } from '/transport.js';
+import { rpc, thumbImg, cmsThumbImg, mediaSrc, previewSrc, probeMedia, onComposeProgress, onPublishProgress, onReorderProgress, notify, pickFolder, openExternal, isTauri } from '/transport.js';
 import { createTimeline, spanSeconds, frameOf, timecode } from '/timeline.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -267,6 +267,15 @@ const state = {
   toast: null,
   drag: null,
   settingsOpen: false,
+  // The WORK page's running order, loaded from the CMS on demand rather than at
+  // boot: it is a separate errand from composing a page and costs a request.
+  workOrderOpen: false,
+  workOrder: null, // { items, ids, saving, touched } while the reorder screen is up
+  // One published project's gallery, opened by clicking it in the run. Kept
+  // beside the running order rather than replacing it, so going back does not
+  // lose an arrangement that has not been saved yet.
+  cmsGalleryFor: null,
+  cmsGallery: null, // { project, rows, was, saving }
   serviceFilter: '',
   login: null, // { email, password, remember, busy, error } while the sign-in modal is open
   loading: null, // { label, detail, since } while a slow backend call is in flight
@@ -336,6 +345,7 @@ const IC = {
   up: () => svg('<path d="M12 19V5M5 12l7-7 7 7"/>', 12, 2),
   chev: () => svg('<path d="M9 6l6 6-6 6"/>', 10, 2.2),
   chevD: () => svg('<path d="M6 9l6 6 6-6"/>', 10, 2.2),
+  grid: () => svg('<rect x="3" y="4" width="7" height="7"/><rect x="14" y="4" width="7" height="7"/><rect x="3" y="15" width="7" height="5"/><rect x="14" y="15" width="7" height="5"/>', 13),
 };
 
 /**
@@ -358,6 +368,10 @@ const STEPS = [
 ];
 
 function topBar() {
+  // Writing the running order cannot be abandoned halfway: the PATCHes are
+  // already in flight and each one holds the CMS through a whole site build, so
+  // leaving would only lose sight of them. The bar holds until it is finished.
+  const held = Boolean(state.workOrder?.saving || state.cmsGallery?.saving);
   return h(
     'div.bar',
     {},
@@ -399,24 +413,45 @@ function topBar() {
       })(),
       h(
         'button.step',
-        { title: 'Asset roots and CMS target', 'aria-current': String(state.settingsOpen), onClick: openSettings, style: { marginRight: '10px' } },
+        { title: 'Asset roots and CMS target', 'aria-current': String(state.settingsOpen), disabled: held, onClick: openSettings },
         IC.gear(),
         h('span', {}, 'ROOTS')
       ),
+      // Two things live in this bar and they are not the same kind of thing.
+      // Left of the rule: signing in and where the assets are. Right of it: the
+      // 01-05 run that builds ONE page, and then — behind a rule of its own,
+      // because it is a different job on a different subject — the work page
+      // itself, which is about every project at once.
+      h('span.bar__sep', { style: { margin: '0 12px' } }),
       STEPS.map(([id, n, label]) =>
         h(
           'button.step',
           {
             'aria-current': String(state.screen === id),
-            disabled: id !== 'pick' && !state.project,
+            disabled: held || (id !== 'pick' && !state.project),
             // Picking a step also leaves the roots panel: it sits over the whole
             // screen, so without this the click looked like it did nothing and
             // the panel had to be closed by hand first.
-            onClick: () => set({ screen: id, settingsOpen: false }),
+            onClick: () => {
+              workThumbs.clear();
+              set({ screen: id, settingsOpen: false, workOrderOpen: false, workOrder: null, cmsGallery: null, cmsGalleryFor: null });
+            },
           },
           h('span', {}, n),
           h('span', {}, label)
         )
+      ),
+      h('span.bar__sep', { style: { margin: '0 12px' } }),
+      h(
+        'button.step.step--mode',
+        {
+          title: held ? 'Writing the running order — this finishes first' : 'Arrange the work page and the galleries on it',
+          'aria-current': String(state.workOrderOpen),
+          disabled: held,
+          onClick: () => (state.workOrderOpen ? closeWorkOrder() : openWorkOrder()),
+        },
+        IC.grid(),
+        h('span', {}, 'WORK PAGE')
       )
     )
   );
@@ -657,7 +692,8 @@ function loginModal() {
 async function openSettings() {
   try {
     const s = await rpc.getSettings();
-    set({ settingsOpen: true, settings: s, browse: null, browseFor: null });
+    workThumbs.clear();
+    set({ settingsOpen: true, workOrderOpen: false, workOrder: null, cmsGallery: null, cmsGalleryFor: null, settings: s, browse: null, browseFor: null });
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -2005,14 +2041,14 @@ function insertIntoRow(rows, ri, slot, tile) {
  * asset in the grid. `fromRow: Infinity` is what says "nothing was removed" —
  * a grid asset that is not in the rail yet shifts nothing.
  */
-function liftTile(from) {
+function liftTile(from, rows = state.gallery) {
   const lift = (row, slot) => {
-    const tile = state.gallery[row]?.items[slot];
+    const tile = rows[row]?.items[slot];
     if (!tile) return null;
     return {
       tile,
-      rows: removeTile(state.gallery, row, slot),
-      collapses: state.gallery[row].items.length === 1,
+      rows: removeTile(rows, row, slot),
+      collapses: rows[row].items.length === 1,
       fromRow: row,
     };
   };
@@ -2021,11 +2057,11 @@ function liftTile(from) {
     // An asset already in the rail MOVES rather than duplicating — the grid
     // tile and the rail tile are the same picture, and two copies of one image
     // in a gallery is never what the drag meant.
-    const found = findRel(state.gallery, from.rel);
+    const found = findRel(rows, from.rel);
     if (found) return lift(found.row, found.slot);
     return {
       tile: { rel: from.rel, description: 'gallery' },
-      rows: state.gallery.map((r) => ({ layout: r.layout, items: [...r.items] })),
+      rows: rows.map((r) => ({ layout: r.layout, items: [...r.items] })),
       collapses: false,
       fromRow: Infinity,
     };
@@ -2033,9 +2069,14 @@ function liftTile(from) {
   return lift(from.row, from.slot);
 }
 
-function moveTile(from, target) {
-  const lifted = liftTile(from);
-  if (!lifted) return state.gallery;
+/**
+ * `rows` defaults to the composer's own rail, which is what every caller in the
+ * compose flow means. The CMS gallery editor rearranges a DIFFERENT set of rows
+ * with the same rules, and passes them in.
+ */
+function moveTile(from, target, rows0 = state.gallery) {
+  const lifted = liftTile(from, rows0);
+  if (!lifted) return rows0;
   const { tile, rows, collapses, fromRow } = lifted;
 
   if (target.kind === 'gap') {
@@ -3298,6 +3339,1071 @@ function publishGate(canPublish, v, failed) {
 }
 
 // ------------------------------------------------------------------ render
+// ------------------------------------------------------------- work order
+//
+// The running order of the WORK page, edited by dragging.
+//
+// The site follows the `order` field, lowest first, and that outranks
+// everything else — year is only consulted to break a tie between two projects
+// that happen to share a number. So this is one flat run, and a project can sit
+// anywhere in it regardless of when the job was.
+//
+// Saving is expensive in a way that is invisible from the app: Payload's
+// afterChange hook runs the whole Astro build SYNCHRONOUSLY, once per changed
+// document. Ten rewritten projects is ten full site builds, one after another.
+// That is why the planner below works to write as FEW documents as it can
+// rather than simply renumbering the run 1..n — dragging one project should
+// cost one build, not twenty.
+
+/**
+ * The longest run of positions whose existing `order` values are ALREADY
+ * strictly increasing. Everything outside that run has to be rewritten and
+ * nothing inside it does, so keeping the longest run is exactly the fewest
+ * writes. O(n^2), which is nothing at portfolio size and reads like the
+ * definition of the thing.
+ */
+function longestKeepable(values) {
+  const n = values.length;
+  const len = new Array(n).fill(1);
+  const prev = new Array(n).fill(-1);
+  let best = -1;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < i; j++) {
+      if (values[j] < values[i] && len[j] + 1 > len[i]) {
+        len[i] = len[j] + 1;
+        prev[i] = j;
+      }
+    }
+    if (best < 0 || len[i] > len[best]) best = i;
+  }
+  const keep = new Set();
+  for (let i = best; i >= 0; i = prev[i]) keep.add(i);
+  return keep;
+}
+
+/**
+ * New `order` values for a sequence, and only for the projects that need one. A
+ * rewritten value lands strictly between the neighbours that were kept, which
+ * is what makes a single drag cost a single write.
+ *
+ * Whole numbers whenever the gap leaves room for one — these are visible in the
+ * CMS sidebar and 14 reads better than 13.5 — and a fraction when a project is
+ * genuinely squeezed between two adjacent integers.
+ */
+function planOrders(seq) {
+  // A missing order sorts as 0 on the site (`a.order ?? 0`), so it is treated
+  // as 0 here too. Two of them cannot both be kept, and that is correct: a tie
+  // has no defined order, so one of the pair has to be written.
+  const cur = seq.map((p) => (typeof p.order === 'number' ? p.order : 0));
+  const keep = longestKeepable(cur);
+  const out = [];
+  for (let i = 0; i < seq.length; ) {
+    if (keep.has(i)) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < seq.length && !keep.has(j)) j++;
+    const k = j - i;
+    // An open end has no bound to divide, so one is invented a whole step away.
+    const before = i > 0 ? cur[i - 1] : null;
+    const after = j < seq.length ? cur[j] : null;
+    const lo = before !== null ? before : after !== null ? after - (k + 1) : 0;
+    const hi = after !== null ? after : lo + (k + 1);
+    const step = (hi - lo) / (k + 1);
+    for (let n = 0; n < k; n++) {
+      const raw = lo + step * (n + 1);
+      // Rounding is only safe when the values are a whole step or more apart:
+      // any closer and two of them could round onto each other, turning the
+      // order back into the tie this was supposed to resolve.
+      const value = step >= 1 ? Math.round(raw) : Number(raw.toFixed(6));
+      if (value !== cur[i + n]) out.push({ id: seq[i + n].id, order: value });
+    }
+    i = j;
+  }
+  return out;
+}
+
+/** Every `order` write needed to make the CMS agree with `desiredIds`. */
+function planReorder(items, desiredIds) {
+  const by = new Map(items.map((p) => [p.id, p]));
+  return planOrders(desiredIds.map((id) => by.get(id)).filter(Boolean));
+}
+
+// ------------------------------------------------------------ dragging
+//
+// Reordering runs on pointer events rather than HTML5 drag and drop, and the
+// difference is the whole point of the screen. Native dragging gives you a
+// translucent snapshot of the tile lagging behind the cursor and an insertion
+// bar that asks you to imagine the result. Here the tile itself follows the
+// cursor and the grid reflows underneath it, so the arrangement you are looking
+// at while you drag IS the arrangement you get.
+//
+// Nothing re-renders during a drag. The real elements are moved inside the grid
+// and animated from where they were to where they now are — smoother than
+// rebuilding the tree, and the only way the thumbnails survive a drag without
+// blinking through their pending state.
+
+/**
+ * Moves elements and makes them appear to slide there.
+ *
+ * Measure, mutate, measure again, then put everything back where it started
+ * with a transform and take the transform away over the next few frames. The
+ * browser lays the grid out once; the motion is compositor work.
+ */
+function slide(nodes, mutate, ms = 190) {
+  if (!nodes.length) return mutate();
+  // Measured WITH any transform still applied, so a slide interrupting another
+  // slide starts from where the tile visually is rather than snapping first.
+  const before = nodes.map((n) => n.getBoundingClientRect());
+  mutate();
+  // ...and the resting position has to be measured without one.
+  nodes.forEach((n) => {
+    n.style.transition = 'none';
+    n.style.transform = '';
+  });
+  const deltas = nodes.map((n, i) => {
+    const now = n.getBoundingClientRect();
+    return [before[i].left - now.left, before[i].top - now.top];
+  });
+  nodes.forEach((n, i) => {
+    const [dx, dy] = deltas[i];
+    if (dx || dy) n.style.transform = `translate(${dx}px, ${dy}px)`;
+  });
+  // One forced reflow, so the line above reads as a starting position instead
+  // of being folded into the line below and animating nothing.
+  nodes[0].getBoundingClientRect();
+  requestAnimationFrame(() => {
+    nodes.forEach((n) => {
+      n.style.transition = `transform ${ms}ms var(--brand)`;
+      n.style.transform = '';
+    });
+  });
+}
+
+/**
+ * Which slot the pointer is asking for: the number of other tiles that come
+ * before that point in reading order. The grid wraps, so "before" is a row test
+ * first and a left-of test only within a row.
+ */
+function dropIndex(others, x, y, rowHalf) {
+  let index = 0;
+  for (const n of others) {
+    const b = n.getBoundingClientRect();
+    const cy = b.top + b.height / 2;
+    const earlier = cy < y - rowHalf ? true : cy > y + rowHalf ? false : b.left + b.width / 2 < x;
+    if (earlier) index++;
+  }
+  return index;
+}
+
+function startWorkDrag(e) {
+  const w = state.workOrder;
+  if (e.button !== 0 || !w || w.saving) return;
+  const el = e.currentTarget;
+  const grid = el.parentElement;
+  const scroller = el.closest('.scroll');
+  const box = el.getBoundingClientRect();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const grabX = e.clientX - box.left;
+  const grabY = e.clientY - box.top;
+  const wasOrder = [...grid.children].map((n) => n.dataset.id);
+  let live = false;
+  let at = { x: e.clientX, y: e.clientY };
+  let ticking = 0;
+
+  const others = () => [...grid.children].filter((n) => n !== el);
+
+  const renumber = () =>
+    [...grid.children].forEach((n, i) => {
+      const pos = n.querySelector('.wtile__pos');
+      if (pos) pos.textContent = pad2(i + 1);
+    });
+
+  const follow = () => {
+    // The resting position is read with the transform off, so the offset stays
+    // correct after the tile has been moved into a different slot.
+    el.style.transition = 'none';
+    el.style.transform = '';
+    const r = el.getBoundingClientRect();
+    el.style.transform = `translate(${at.x - grabX - r.left}px, ${at.y - grabY - r.top}px)`;
+  };
+
+  const reflow = () => {
+    const rest = others();
+    const target = rest[dropIndex(rest, at.x, at.y, box.height / 2)] || null;
+    if (el.nextElementSibling === target) return; // already in that slot
+    slide(rest, () => grid.insertBefore(el, target));
+    renumber();
+    follow();
+  };
+
+  // A long run has to bring itself to the pointer, or moving a project from the
+  // bottom to the top means dropping it, scrolling, and picking it up again.
+  const EDGE = 90;
+  const tick = () => {
+    ticking = requestAnimationFrame(tick);
+    if (!scroller) return;
+    const b = scroller.getBoundingClientRect();
+    const over = at.y - (b.bottom - EDGE);
+    const under = b.top + EDGE - at.y;
+    const by = over > 0 ? Math.min(over, EDGE) / 5 : under > 0 ? -Math.min(under, EDGE) / 5 : 0;
+    if (!by) return;
+    const was = scroller.scrollTop;
+    scroller.scrollTop += by;
+    if (scroller.scrollTop !== was) {
+      follow();
+      reflow();
+    }
+  };
+
+  const onMove = (ev) => {
+    at = { x: ev.clientX, y: ev.clientY };
+    if (!live) {
+      // A few pixels of slop, so a click can never count as a reorder.
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+      live = true;
+      el.dataset.lift = '1';
+      grid.dataset.dragging = '1';
+      ticking = requestAnimationFrame(tick);
+    }
+    follow();
+    reflow();
+  };
+
+  const finish = (cancelled) => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+    document.removeEventListener('keydown', onKey);
+    cancelAnimationFrame(ticking);
+    grid.removeAttribute('data-dragging');
+    // A press that never travelled far enough to be a drag is a click, and a
+    // click opens that project's gallery.
+    if (!live) {
+      if (!cancelled) openCmsGallery(el.dataset.id);
+      return;
+    }
+
+    // Escape puts the run back the way it was found, so the grid is safe to
+    // push around and look at.
+    if (cancelled) {
+      slide(others(), () => {
+        for (const id of wasOrder) {
+          const n = [...grid.children].find((c) => c.dataset.id === id);
+          if (n) grid.append(n);
+        }
+      });
+      renumber();
+    }
+
+    // The tile lands rather than snapping: it travels from wherever the cursor
+    // left it to the slot it now owns.
+    const from = el.getBoundingClientRect();
+    el.removeAttribute('data-lift');
+    el.style.transition = 'none';
+    el.style.transform = '';
+    const to = el.getBoundingClientRect();
+    el.style.transform = `translate(${from.left - to.left}px, ${from.top - to.top}px)`;
+    el.getBoundingClientRect();
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform 200ms var(--brand)';
+      el.style.transform = '';
+    });
+
+    // Re-rendering mid-flight would replace the element being animated, so the
+    // state catches up with the DOM once the tile has landed.
+    setTimeout(() => {
+      const now = state.workOrder;
+      if (!now) return;
+      const next = [...grid.children].map((n) => n.dataset.id);
+      if (next.join() !== now.ids.join()) {
+        now.ids = next;
+        now.touched = true;
+      }
+      render();
+    }, 210);
+  };
+
+  const onUp = () => finish(false);
+  const onKey = (ev) => {
+    if (ev.key === 'Escape') finish(true);
+  };
+
+  // On document rather than on the tile: the pointer regularly leaves the tile
+  // it is dragging, and the tile itself is replaced by the render that ends the
+  // drag. `pointercancel` matters as much as `pointerup` — the window losing
+  // focus mid-drag fires only the former, and without it the tile would be left
+  // stuck to a cursor that is no longer there.
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+  document.addEventListener('pointercancel', onUp);
+  document.addEventListener('keydown', onKey);
+}
+
+// ---------------------------------------------------- a published gallery
+//
+// The other half of the work-page screen. The running order decides which
+// projects come first; this decides what one project's own page looks like once
+// you are inside it — click a tile in the grid and its gallery opens.
+//
+// Everything here is already in the CMS, so a reflow is one document write
+// rather than a re-compose: no upload, no ffmpeg, no publish. The rows use the
+// composer's own model (`moveTile`, `removeTile`, `setLayout`), which means the
+// arrangement rules are the ones the rail has always used and the ten layouts
+// are the ten the collection accepts.
+//
+// The cells are sized with `aspect-ratio` rather than pixels, so a row is the
+// exact shape the site will build at whatever width the window happens to be.
+
+const gallerySig = (rows) =>
+  rows.map((r) => `${layoutOf(r)}:${r.items.map((i) => i.rel).join(',')}`).join('|');
+
+async function openCmsGallery(id) {
+  set({ cmsGallery: null, cmsGalleryFor: id });
+  try {
+    const project = await withLoading('READING THE PROJECT', '', () => rpc.cmsProject(id), { inline: true });
+    const rows = project.gallery.map((r) => ({
+      layout: r.layout,
+      items: r.images.map((im) => ({ rel: im.id, url: im.url, name: im.name, video: im.video })),
+    }));
+    set({ cmsGallery: { project, rows, was: gallerySig(rows), saving: false, library: null } });
+    // Its own uploads are what anyone opening this screen wants first, so the
+    // library is filled in rather than waiting to be searched.
+    if (project.base) loadCmsLibrary(project.base);
+  } catch (err) {
+    set({ cmsGalleryFor: null });
+    toast(err.message, 'error');
+  }
+}
+
+const closeCmsGallery = () => set({ cmsGallery: null, cmsGalleryFor: null });
+
+/**
+ * The rest of this project's uploads.
+ *
+ * Payload's media is one flat collection with no link back to a project, but
+ * the composer names every file it uploads `{base}_{role}{nn}` — so the base is
+ * the grouping, and asking for filenames containing it finds the key image, the
+ * thumb crop, and anything composed for an earlier version of the page.
+ *
+ * Nothing is uploaded from here: a file that is not in the CMS yet has to go
+ * through 01-05, and this cannot invent one.
+ */
+async function loadCmsLibrary(query) {
+  const g = state.cmsGallery;
+  if (!g) return;
+  g.library = { query, items: null, error: null };
+  render();
+  try {
+    const items = await rpc.cmsMedia(query);
+    if (state.cmsGallery?.library?.query === query) {
+      state.cmsGallery.library = { query, items, error: null };
+      render();
+    }
+  } catch (err) {
+    if (state.cmsGallery?.library?.query === query) {
+      state.cmsGallery.library = { query, items: [], error: err.message };
+      render();
+    }
+  }
+}
+
+/** Adds an image as a new full-width row at the end, ready to be dragged. */
+function addToGallery(item) {
+  const g = state.cmsGallery;
+  if (findRel(g.rows, item.rel)) return;
+  slideRender(() => {
+    g.rows = [...g.rows, { layout: DEFAULT_LAYOUT, items: [item] }];
+  });
+  // The new row lands at the bottom of a gallery that may be taller than the
+  // window, so it is brought into view rather than silently appended.
+  requestAnimationFrame(() => {
+    document.querySelector(`.gcell[data-rel="${item.rel}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+}
+
+function libraryPanel() {
+  const g = state.cmsGallery;
+  const lib = g.library;
+  const used = new Set(flatTiles(g.rows).map((t) => t.rel));
+  const items = lib?.items || [];
+  const spare = items.filter((m) => !used.has(m.id));
+
+  return h(
+    'div',
+    { style: { display: 'flex', flexDirection: 'column', gap: '12px', paddingTop: '22px', borderTop: '1px solid var(--cw)' } },
+    h(
+      'div',
+      { style: { display: 'flex', alignItems: 'baseline', gap: '12px' } },
+      h('span', { style: { fontWeight: 500, fontSize: '20px', letterSpacing: '0.02em' } }, 'Add from the CMS'),
+      h(
+        'span.m.dimmer',
+        { style: { fontSize: '9px', letterSpacing: '0.18em' } },
+        lib?.items === null ? 'LOOKING' : `${spare.length} NOT IN THIS GALLERY`
+      )
+    ),
+    h(
+      'p.m.dimmer',
+      { style: { margin: 0, fontSize: '9.5px', lineHeight: 1.7, letterSpacing: '0.06em', maxWidth: '620px' } },
+      'Everything the CMS holds under this project\u2019s upload name — the key image, the thumb crop, and anything composed for an earlier version of the page. Click to put one back; it lands as a new row at the end for you to drag into place. Something that was never published has to go through 01–05 first.'
+    ),
+    h(
+      'label',
+      { style: { display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid var(--rule)', padding: '9px 12px', maxWidth: '620px' } },
+      IC.search(),
+      h('input.m', {
+        id: 'lib-q',
+        value: lib?.query || '',
+        placeholder: 'FILENAME CONTAINS',
+        style: { flex: '1 1 auto', fontSize: '10.5px', letterSpacing: '0.08em', outline: 'none' },
+        // On change, not input: this is a request to the CMS per keystroke
+        // otherwise.
+        onChange: (e) => loadCmsLibrary(e.target.value),
+      })
+    ),
+    lib?.error ? h('div.empty', {}, lib.error) : null,
+    lib?.items === null
+      ? h('div.empty', {}, 'Reading the library')
+      : items.length
+        ? h(
+            'div.libgrid',
+            {},
+            items.map((m) => {
+              const inUse = used.has(m.id);
+              const isKey = m.id === g.project.keyImage;
+              return h(
+                'button.libtile',
+                {
+                  'data-used': inUse ? '1' : null,
+                  disabled: inUse,
+                  title: inUse ? `${m.name}\nalready in this gallery` : `${m.name}\nclick to add`,
+                  onClick: () => addToGallery({ rel: m.id, url: m.url, name: m.name, video: m.video }),
+                },
+                workThumb(m.url),
+                h('span.libtile__tag.m', {}, inUse ? 'IN USE' : isKey ? 'KEY IMAGE' : m.video ? 'VIDEO' : 'STILL'),
+                h('span.libtile__name.m.trunc', {}, m.name.replace(/^[^_]*_/, ''))
+              );
+            })
+          )
+        : h('div.empty', {}, 'Nothing in the CMS matches that'),
+  );
+}
+
+async function saveCmsGallery() {
+  const g = state.cmsGallery;
+  g.saving = true;
+  render();
+  try {
+    const project = await rpc.saveCmsGallery(
+      g.project.id,
+      g.rows.map((r) => ({ layout: layoutOf(r), images: r.items.map((i) => i.rel) }))
+    );
+    const rows = project.gallery.map((r) => ({
+      layout: r.layout,
+      items: r.images.map((im) => ({ rel: im.id, url: im.url, name: im.name, video: im.video })),
+    }));
+    set({ cmsGallery: { project, rows, was: gallerySig(rows), saving: false, library: g.library } });
+    toast(`${project.title} gallery saved`, 'ok');
+    notify('Gallery saved', `${project.title} — the site is rebuilding`);
+  } catch (err) {
+    if (state.cmsGallery) state.cmsGallery.saving = false;
+    render();
+    toast(err.message, 'error');
+  }
+}
+
+/**
+ * Re-renders and makes the cells appear to slide to their new places.
+ *
+ * The rows change SHAPE as images move between them — a two-up losing one
+ * becomes a full-width band — so unlike the work grid this cannot move elements
+ * around by hand. It re-renders and matches the new cells to the old ones by
+ * media id instead. `held` is the cell being dragged, which is following the
+ * cursor and must not be animated anywhere.
+ */
+function slideRender(mutate, held) {
+  const cells = () => [...document.querySelectorAll('.gcell[data-rel]')];
+  const before = new Map(cells().map((n) => [n.dataset.rel, n.getBoundingClientRect()]));
+  mutate();
+  render();
+  const now = cells().filter((n) => n.dataset.rel !== held && before.has(n.dataset.rel));
+  const deltas = now.map((n) => {
+    const was = before.get(n.dataset.rel);
+    const box = n.getBoundingClientRect();
+    return [was.left - box.left, was.top - box.top];
+  });
+  now.forEach((n, i) => {
+    const [dx, dy] = deltas[i];
+    if (!dx && !dy) return;
+    n.style.transition = 'none';
+    n.style.transform = `translate(${dx}px, ${dy}px)`;
+  });
+  now[0]?.getBoundingClientRect();
+  requestAnimationFrame(() => {
+    now.forEach((n) => {
+      n.style.transition = 'transform 190ms var(--brand)';
+      n.style.transform = '';
+    });
+  });
+}
+
+/**
+ * What the pointer is asking for: a seam between rows, or a side of a cell.
+ *
+ * Seams are tested first and by containment, so dropping into one is a
+ * deliberate move to a row of its own. Anywhere else falls to the nearest cell,
+ * which means a drop never misses — letting go over the margin puts the image
+ * beside whatever it was closest to rather than nowhere.
+ */
+function galleryTarget(x, y, held) {
+  for (const gap of document.querySelectorAll('.ggap')) {
+    const b = gap.getBoundingClientRect();
+    if (y >= b.top && y <= b.bottom) return { kind: 'gap', at: Number(gap.dataset.gap) };
+  }
+  let best = null;
+  let bestDistance = Infinity;
+  for (const cell of document.querySelectorAll('.gcell')) {
+    if (cell === held) continue;
+    const b = cell.getBoundingClientRect();
+    const d = Math.hypot(Math.max(b.left - x, 0, x - b.right), Math.max(b.top - y, 0, y - b.bottom));
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = cell;
+    }
+  }
+  if (!best) return { kind: 'gap', at: -1 };
+  const b = best.getBoundingClientRect();
+  return {
+    kind: 'cell',
+    row: Number(best.dataset.row),
+    slot: Number(best.dataset.slot),
+    side: x < b.left + b.width / 2 ? 'left' : 'right',
+  };
+}
+
+function startGalleryDrag(e) {
+  const g = state.cmsGallery;
+  if (e.button !== 0 || !g || g.saving) return;
+  const rel = e.currentTarget.dataset.rel;
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const box = e.currentTarget.getBoundingClientRect();
+  const grabX = e.clientX - box.left;
+  const grabY = e.clientY - box.top;
+  const scroller = e.currentTarget.closest('.scroll');
+  let live = false;
+  let at = { x: e.clientX, y: e.clientY };
+  let ticking = 0;
+  let movedAt = 0;
+
+  // The element is replaced on every re-render, so it is looked up by the media
+  // id rather than held on to.
+  const cell = () => document.querySelector(`.gcell[data-rel="${rel}"]`);
+
+  const follow = () => {
+    const el = cell();
+    if (!el) return;
+    el.dataset.lift = '1';
+    el.style.transition = 'none';
+    el.style.transform = '';
+    const r = el.getBoundingClientRect();
+    el.style.transform = `translate(${at.x - grabX - r.left}px, ${at.y - grabY - r.top}px)`;
+  };
+
+  const reflow = () => {
+    const g = state.cmsGallery;
+    const el = cell();
+    if (!g || !el) return;
+    const from = findRel(g.rows, rel);
+    if (!from) return;
+    // Rows change SHAPE as they take an image, which moves the seams around
+    // under a stationary cursor — so without a moment to settle, hovering a
+    // seam makes the row split and merge over and over. A tenth of a second is
+    // long enough to stop the flapping and short enough to feel immediate.
+    if (performance.now() - movedAt < 110) return;
+    const target = galleryTarget(at.x, at.y, el);
+    const next = moveTile({ row: from.row, slot: from.slot }, target, g.rows);
+    if (gallerySig(next) === gallerySig(g.rows)) return;
+    movedAt = performance.now();
+    slideRender(() => {
+      g.rows = next;
+    }, rel);
+    follow();
+  };
+
+  const EDGE = 90;
+  const tick = () => {
+    ticking = requestAnimationFrame(tick);
+    if (!scroller) return;
+    const b = scroller.getBoundingClientRect();
+    const over = at.y - (b.bottom - EDGE);
+    const under = b.top + EDGE - at.y;
+    const by = over > 0 ? Math.min(over, EDGE) / 5 : under > 0 ? -Math.min(under, EDGE) / 5 : 0;
+    if (!by) return;
+    const was = scroller.scrollTop;
+    scroller.scrollTop += by;
+    if (scroller.scrollTop !== was) {
+      follow();
+      reflow();
+    }
+  };
+
+  const onMove = (ev) => {
+    at = { x: ev.clientX, y: ev.clientY };
+    if (!live) {
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+      live = true;
+      // In state, not on the element: every reflow re-renders the pane, which
+      // would drop an attribute set directly.
+      g.dragging = true;
+      ticking = requestAnimationFrame(tick);
+    }
+    follow();
+    reflow();
+  };
+
+  const finish = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
+    cancelAnimationFrame(ticking);
+    if (state.cmsGallery) state.cmsGallery.dragging = false;
+    if (!live) return;
+    const el = cell();
+    if (!el) return render();
+    // The cell lands rather than snapping back.
+    const from = el.getBoundingClientRect();
+    el.removeAttribute('data-lift');
+    el.style.transition = 'none';
+    el.style.transform = '';
+    const to = el.getBoundingClientRect();
+    el.style.transform = `translate(${from.left - to.left}px, ${from.top - to.top}px)`;
+    el.getBoundingClientRect();
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform 200ms var(--brand)';
+      el.style.transform = '';
+    });
+    setTimeout(render, 210);
+  };
+
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', finish);
+  document.addEventListener('pointercancel', finish);
+}
+
+// ------------------------------------------------------------------ rendering
+
+function galleryCell(row, ri, slot, item, n) {
+  const layout = layoutOf(row);
+  return h(
+    'div.gcell',
+    {
+      'data-rel': item.rel,
+      'data-row': ri,
+      'data-slot': slot,
+      style: {
+        flexGrow: spansFor(layout)[slot] || 1,
+        flexBasis: 0,
+        aspectRatio: aspectFor(layout, slot) || '3 / 2',
+        alignSelf: alignEndFor(layout, slot) ? 'flex-end' : 'flex-start',
+      },
+      title: `${item.name}\n${layoutLabel(layout)} · slot ${slot + 1} of ${row.items.length}`,
+      onPointerdown: startGalleryDrag,
+    },
+    workThumb(item.url),
+    h('span.gcell__num.m', {}, pad2(n)),
+    item.video ? h('span.gcell__vid.m', {}, 'VIDEO') : null,
+    h(
+      'button.gcell__x',
+      {
+        title: 'Take this out of the gallery',
+        // The button sits on top of a drag surface, so the press must not also
+        // start a drag.
+        onPointerdown: (e) => e.stopPropagation(),
+        onClick: () => {
+          const g = state.cmsGallery;
+          slideRender(() => {
+            g.rows = removeTile(g.rows, ri, slot);
+          });
+        },
+      },
+      IC.x()
+    )
+  );
+}
+
+/** A seam. Dropping here gives the image a row of its own. */
+const galleryGap = (at) => h('div.ggap', { 'data-gap': at });
+
+function galleryRow(row, ri, first) {
+  const layout = layoutOf(row);
+  const alts = layoutsForCount(row.items.length);
+  return h(
+    'div.gwrap',
+    {},
+    h(
+      'div.ghead',
+      {},
+      h('span.m.dim', { style: { fontSize: '9px', letterSpacing: '0.2em' } }, `ROW ${pad2(ri + 1)}`),
+      // Only the layouts with this slot count are offered — the others cannot
+      // hold the row's images and the collection would reject them.
+      alts.map((l) =>
+        h(
+          'button.chip',
+          {
+            'aria-pressed': String(l === layout),
+            onClick: () => {
+              const g = state.cmsGallery;
+              slideRender(() => {
+                g.rows = setLayout(g.rows, ri, l);
+              });
+            },
+          },
+          alts.length > 3 ? heightLabel(l) : layoutLabel(l)
+        )
+      )
+    ),
+    h('div.gcells', { 'data-row': ri }, row.items.map((it, s) => galleryCell(row, ri, s, it, first + s + 1)))
+  );
+}
+
+function cmsGalleryPanel() {
+  const g = state.cmsGallery;
+  if (!g) {
+    return h(
+      'div.screen',
+      {},
+      h(
+        'div.pane.pane--main',
+        { style: { padding: '38px 40px' } },
+        state.loading?.inline ? loader(state.loading.label, state.loading.detail, state.loading.since) : h('div.empty', {}, 'Reading the project')
+      )
+    );
+  }
+
+  const dirty = gallerySig(g.rows) !== g.was;
+  const signedIn = Boolean(state.status?.payload?.credentials);
+  const count = galleryCount(g.rows);
+  let n = 0;
+
+  return h(
+    'div.screen',
+    {},
+    h(
+      'div.pane.pane--main.scroll.gallery',
+      { 'data-dragging': g.dragging ? '1' : null, style: { padding: '38px 40px 0', gap: '20px', display: 'flex', flexDirection: 'column' } },
+      h(
+        'div',
+        { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '20px' } },
+        h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
+          h('span.ov', {}, `Gallery · ${g.project.year}`),
+          h('h1', { style: { margin: 0, fontWeight: 500, fontSize: '42px', lineHeight: 1 } }, g.project.title)
+        ),
+        h(
+          'div',
+          { style: { display: 'flex', gap: '6px' } },
+          h('button.chip', { disabled: g.saving, onClick: () => openExternal(g.project.url) }, 'OPEN PAGE'),
+          h('button.chip', { disabled: g.saving, onClick: closeCmsGallery }, 'BACK TO THE RUN')
+        )
+      ),
+      h(
+        'p.m.dimmer',
+        { style: { margin: 0, fontSize: '10px', lineHeight: 1.75, letterSpacing: '0.06em', maxWidth: '760px' } },
+        'Every image here is already in the CMS, so rearranging costs one write rather than a re-compose. Drag between rows, or into a seam to give an image a row of its own; a row picks up or drops a layout as it gains and loses images, and the buttons above each row set which one. Cells are drawn at the shape the site will build them.'
+      ),
+      g.rows.length
+        ? h(
+            'div',
+            { style: { display: 'flex', flexDirection: 'column' } },
+            galleryGap(0),
+            g.rows.map((row, ri) => {
+              const first = n;
+              n += row.items.length;
+              return [galleryRow(row, ri, first), galleryGap(ri + 1)];
+            })
+          )
+        : h('div.empty', {}, 'This project has no gallery rows — add one below'),
+      libraryPanel(),
+      h('div', { style: { minHeight: '40px' } })
+    ),
+    h(
+      'div.pane.pane--r',
+      { style: { width: '300px', padding: '38px 26px', gap: '16px' } },
+      h('span.ov', {}, 'Gallery'),
+      h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--rule)' } },
+        [
+          ['ROWS', String(g.rows.length)],
+          ['IMAGES', String(count)],
+          ['CHANGED', dirty ? 'YES' : 'NO'],
+        ].map(([k, v]) =>
+          h(
+            'div',
+            { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 0', borderBottom: '1px solid var(--rule)' } },
+            h('span.m.dim', { style: { fontSize: '9.5px', letterSpacing: '0.18em' } }, k),
+            h('span.m', { style: { fontSize: '10px', letterSpacing: '0.06em' } }, v)
+          )
+        )
+      ),
+      h(
+        'p.m.dimmer',
+        { style: { margin: 0, fontSize: '9px', lineHeight: 1.8, letterSpacing: '0.1em' } },
+        'TAKING AN IMAGE OUT REMOVES IT FROM THIS PAGE ONLY — THE FILE STAYS IN THE CMS AND ANY OTHER PROJECT USING IT IS UNTOUCHED. SAVING REBUILDS THE SITE ONCE.'
+      ),
+      g.saving
+        ? h(
+            'div',
+            { style: { display: 'flex', flexDirection: 'column', gap: '7px', border: '1px solid var(--cw45)', padding: '12px 14px' } },
+            h('span.m', { style: { fontSize: '9.5px', letterSpacing: '0.18em' } }, 'WRITING'),
+            h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.1em' } }, 'BUILDING THE SITE')
+          )
+        : null,
+      h('div.grow'),
+      !signedIn ? h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.14em', lineHeight: 1.7 } }, 'SIGN IN TO WRITE THE GALLERY TO THE CMS') : null,
+      h(
+        'button.btn.btn--ghost',
+        {
+          disabled: !dirty || g.saving,
+          onClick: () =>
+            slideRender(() => {
+              g.rows = g.project.gallery.map((r) => ({
+                layout: r.layout,
+                items: r.images.map((im) => ({ rel: im.id, url: im.url, name: im.name, video: im.video })),
+              }));
+            }),
+        },
+        'REVERT'
+      ),
+      h(
+        'button.btn',
+        {
+          disabled: !dirty || g.saving || !signedIn,
+          title: signedIn ? '' : 'Signing in is what lets the app write to the CMS',
+          onClick: saveCmsGallery,
+        },
+        g.saving ? 'SAVING' : 'SAVE GALLERY'
+      )
+    )
+  );
+}
+
+// ---------------------------------------------------------------- the screen
+
+// The thumbnails outlive the render that made them. Rebuilding them would mean
+// 24 fresh <img> elements, each blank until its source resolves, so the grid
+// would blink through its pending state every time a count changed.
+const workThumbs = new Map();
+const workThumb = (url) => {
+  if (!workThumbs.has(url)) workThumbs.set(url, cmsThumbImg(url, 420, { alt: '' }));
+  return workThumbs.get(url);
+};
+
+const workState = (items) => ({ items, ids: items.map((p) => p.id), saving: null, touched: false });
+
+function closeWorkOrder() {
+  workThumbs.clear();
+  set({ workOrderOpen: false, workOrder: null, cmsGallery: null, cmsGalleryFor: null });
+}
+
+async function openWorkOrder() {
+  set({ workOrderOpen: true, settingsOpen: false, workOrder: null });
+  try {
+    const items = await withLoading(
+      'READING THE WORK PAGE',
+      state.status?.payload?.url || '',
+      () => rpc.listWorkOrder(),
+      { inline: true }
+    );
+    set({ workOrder: workState(items) });
+  } catch (err) {
+    set({ workOrderOpen: false });
+    toast(err.message, 'error');
+  }
+}
+
+async function saveWorkOrder() {
+  const w = state.workOrder;
+  const changes = planReorder(w.items, w.ids);
+  if (!changes.length) return;
+  w.saving = { done: 0, total: changes.length, title: '' };
+  render();
+  // Each write blocks on a full site build, so the only honest progress report
+  // is per document — an indeterminate spinner for ten minutes reads as a hang.
+  const off = onReorderProgress((p) => {
+    if (state.workOrder) state.workOrder.saving = { total: changes.length, ...p };
+    render();
+  });
+  try {
+    const items = await rpc.saveWorkOrder(changes);
+    set({ workOrder: workState(items) });
+    const n = changes.length;
+    toast(`Work page reordered — ${n} project${n > 1 ? 's' : ''} rewritten`, 'ok');
+    notify('Work page reordered', `${n} project${n > 1 ? 's' : ''} written, site rebuilt`);
+  } catch (err) {
+    if (state.workOrder) state.workOrder.saving = null;
+    render();
+    toast(err.message, 'error');
+  } finally {
+    off();
+  }
+}
+
+function workTile(p, position, dirty) {
+  return h(
+    'div.wtile',
+    {
+      // The grid is the record of the order while a drag is in flight, so every
+      // tile has to be able to say which project it is.
+      'data-id': p.id,
+      'data-dirty': dirty ? '1' : null,
+      title: `${p.title}\n${p.year}${p.code ? ' · ' + p.code : ''}`,
+      onPointerdown: startWorkDrag,
+    },
+    h(
+      'div.wtile__img',
+      {},
+      p.image
+        ? workThumb(p.image)
+        : h('span.m.dimmer', { style: { fontSize: '8.5px', letterSpacing: '0.18em' } }, 'NO KEY IMAGE')
+    ),
+    h('span.wtile__pos.m', {}, pad2(position)),
+    dirty ? h('span.wtile__moved.m', {}, 'REWRITE') : null,
+    h('span.wtile__name.trunc', {}, p.title),
+    h(
+      'span.wtile__meta.m.dimmer',
+      {},
+      [p.year, p.code, p.featured ? 'FEATURED' : null].filter(Boolean).join(' · ') || '—'
+    )
+  );
+}
+
+function workOrderPanel() {
+  const w = state.workOrder;
+  if (!w) {
+    return h(
+      'div.screen',
+      {},
+      h(
+        'div.pane.pane--main',
+        { style: { padding: '38px 40px' } },
+        state.loading?.inline ? loader(state.loading.label, state.loading.detail, state.loading.since) : h('div.empty', {}, 'Reading the work page')
+      )
+    );
+  }
+
+  const changes = planReorder(w.items, w.ids);
+  const dirty = new Set(changes.map((c) => c.id));
+  const by = new Map(w.items.map((p) => [p.id, p]));
+  const run = w.ids.map((id) => by.get(id)).filter(Boolean);
+  const signedIn = Boolean(state.status?.payload?.credentials);
+  const busy = Boolean(w.saving);
+  const n = changes.length;
+
+  return h(
+    'div.screen',
+    {},
+    h(
+      'div.pane.pane--main.scroll',
+      { style: { padding: '38px 40px 0', gap: '22px', display: 'flex', flexDirection: 'column' } },
+      h(
+        'div',
+        { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '20px' } },
+        h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: '14px' } },
+          h('span.ov', {}, 'Work page'),
+          h('h1', { style: { margin: 0, fontWeight: 500, fontSize: '46px', lineHeight: 1 } }, 'Running order')
+        ),
+        h('button.chip', { disabled: busy, onClick: closeWorkOrder }, 'CLOSE')
+      ),
+      h(
+        'p.m.dimmer',
+        { style: { margin: 0, fontSize: '10px', lineHeight: 1.75, letterSpacing: '0.06em', maxWidth: '760px' } },
+        'This is the grid in the order the site builds it, top left first. Drag a project anywhere in the run — the order set here decides the page, and the year is only used to settle a tie, so a 2022 job can sit above a 2026 one if that is the story you want to tell. Click a project to open its own gallery and rearrange the images inside it.'
+      ),
+      run.length
+        ? h('div.wgrid', {}, run.map((p, i) => workTile(p, i + 1, dirty.has(p.id))))
+        : h('div.empty', {}, 'No published projects in the CMS'),
+      h('div', { style: { minHeight: '20px' } })
+    ),
+    h(
+      'div.pane.pane--r',
+      { style: { width: '330px', padding: '38px 30px', gap: '18px' } },
+      h('span.ov', {}, 'Publish'),
+      h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--rule)' } },
+        [
+          ['PROJECTS', String(w.items.length)],
+          ['TO REWRITE', String(n)],
+        ].map(([k, v]) =>
+          h(
+            'div',
+            { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 0', borderBottom: '1px solid var(--rule)' } },
+            h('span.m.dim', { style: { fontSize: '9.5px', letterSpacing: '0.18em' } }, k),
+            h('span.m', { style: { fontSize: '10px', letterSpacing: '0.06em' } }, v)
+          )
+        )
+      ),
+      // Saying this out loud is the point: the cost of a reorder is not the API
+      // call, it is that the CMS rebuilds the entire site once per document and
+      // does it synchronously. A big reshuffle is minutes, not seconds.
+      // Two things worth saying out loud, and the app is the only place either
+      // can be said. The first is that the cost of a reorder is not the API
+      // call: the CMS rebuilds the whole site once per document, synchronously,
+      // so a big reshuffle is minutes rather than seconds. The second is that
+      // the run can already need writing before anybody drags anything —
+      // projects sharing an order number have no defined sequence, so what is
+      // on screen is one reading of the CMS rather than a promise about it.
+      h(
+        'p.m.dimmer',
+        { style: { margin: 0, fontSize: '9px', lineHeight: 1.8, letterSpacing: '0.1em' } },
+        n
+          ? `SAVING WRITES ${n} PROJECT${n > 1 ? 'S' : ''}, AND THE CMS REBUILDS THE SITE ONCE PER PROJECT — EXPECT ABOUT A MINUTE EACH. NOTHING ELSE IS TOUCHED.`
+          : 'NOTHING HAS MOVED. DRAG A PROJECT TO CHANGE THE RUN.'
+      ),
+      n && !w.touched
+        ? h(
+            'p.m.dimmer',
+            { style: { margin: 0, fontSize: '9px', lineHeight: 1.8, letterSpacing: '0.1em', borderTop: '1px solid var(--rule)', paddingTop: '12px' } },
+            `${n} PROJECT${n > 1 ? 'S SHARE' : ' SHARES'} AN ORDER NUMBER WITH ANOTHER, WHICH IS NOT A SEQUENCE. THE RUN ABOVE IS ONE VALID READING OF IT — SAVING MAKES IT THE ONLY ONE.`
+          )
+        : null,
+      busy
+        ? h(
+            'div',
+            { style: { display: 'flex', flexDirection: 'column', gap: '7px', border: '1px solid var(--cw45)', padding: '12px 14px' } },
+            h('span.m', { style: { fontSize: '9.5px', letterSpacing: '0.18em' } }, `WRITING ${w.saving.done} / ${w.saving.total}`),
+            h('span.m.dimmer.trunc', { style: { fontSize: '9px', letterSpacing: '0.1em' } }, w.saving.title || 'BUILDING THE SITE')
+          )
+        : null,
+      h('div.grow'),
+      !signedIn
+        ? h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.14em', lineHeight: 1.7 } }, 'SIGN IN TO WRITE THE ORDER TO THE CMS')
+        : null,
+      h(
+        'button.btn.btn--ghost',
+        { disabled: !n || busy, onClick: () => set({ workOrder: workState(w.items) }) },
+        'REVERT'
+      ),
+      h(
+        'button.btn',
+        {
+          disabled: !n || busy || !signedIn,
+          title: signedIn ? '' : 'Signing in is what lets the app write to the CMS',
+          onClick: saveWorkOrder,
+        },
+        busy ? `SAVING ${w.saving.done}/${w.saving.total}` : n ? `SAVE ORDER · ${n}` : 'SAVE ORDER'
+      )
+    )
+  );
+}
+
 const SCREENS = { pick: screenPick, compose: screenCompose, previz: screenPreviz, copy: screenCopy, export: screenExport };
 
 let scrollMemo = {};
@@ -3314,7 +4420,13 @@ function render() {
   app.replaceChildren(
     ...[
       topBar(),
-      state.settingsOpen ? settingsPanel() : (state.project || state.screen === 'pick' ? SCREENS[state.screen] : screenPick)(),
+      state.cmsGalleryFor
+        ? cmsGalleryPanel()
+        : state.workOrderOpen
+        ? workOrderPanel()
+        : state.settingsOpen
+          ? settingsPanel()
+          : (state.project || state.screen === 'pick' ? SCREENS[state.screen] : screenPick)(),
       state.login ? loginModal() : null,
       state.loading && !state.loading.inline ? loadingOverlay() : null,
       state.toast ? h('div.toast', { 'data-kind': state.toast.kind }, state.toast.message) : null,

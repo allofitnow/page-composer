@@ -392,6 +392,96 @@ pub async fn preview_video(
     .map_err(|e| e.to_string())?
 }
 
+/// A thumbnail of a KEY IMAGE that lives in the CMS rather than on a root.
+///
+/// The reorder screen shows published projects, whose artwork is on the Payload
+/// server. The webview cannot load it directly — the content policy allows
+/// `asset:` and `data:` for images and nothing over the network, and the CMS
+/// address is a runtime setting, so it could not be named in the policy in any
+/// case. Fetching it here and caching a small jpeg puts it exactly where every
+/// other thumbnail in the app already comes from.
+#[tauri::command]
+pub async fn cms_thumb(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    url: String,
+    w: Option<u32>,
+) -> Result<String, String> {
+    let cache_dir = state.cache_dir.clone();
+    std::fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    let width = w.unwrap_or(420).clamp(64, 2000);
+
+    let mut hasher = Sha1::new();
+    hasher.update(format!("cms|{url}|{width}"));
+    let out = cache_dir.join(format!("{}.jpg", hex::encode(hasher.finalize())));
+    if out.exists() {
+        serve(&app, &out);
+        return Ok(out.to_string_lossy().to_string());
+    }
+
+    let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("{url}: {}", res.status()));
+    }
+    // The server's own answer decides, and the extension is only the fallback:
+    // a gallery is mostly video, and a clip mislabelled as a still would fail
+    // to decode and read as a missing thumbnail.
+    let served_type = res
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let is_video = served_type.starts_with("video/")
+        || (served_type.is_empty()
+            && matches!(
+                url.rsplit('.').next().unwrap_or_default().to_ascii_lowercase().as_str(),
+                "mp4" | "mov" | "m4v" | "webm"
+            ));
+    let bytes = res.bytes().await.map_err(|e| e.to_string())?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let _slot = Slot::acquire();
+        if is_video {
+            // ffmpeg reads a file, not a buffer, and it has to seek to find a
+            // frame worth showing — so the clip is staged on disk and removed
+            // again whether or not the frame comes out.
+            let staged = out.with_extension("src");
+            std::fs::write(&staged, &bytes).map_err(|e| e.to_string())?;
+            let made = build(&cfg, &staged, Kind::Video, width, &out);
+            let _ = std::fs::remove_file(&staged);
+            made.map_err(|e| {
+                let _ = std::fs::remove_file(&out);
+                e.to_string()
+            })?;
+            return Ok::<_, String>(out);
+        }
+        // From memory for a still: these are the app's own composed uploads,
+        // already upright, so there is no EXIF orientation left to honour.
+        let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+        let img = resize_within(img, width);
+        let mut file = std::fs::File::create(&out).map_err(|e| e.to_string())?;
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut file, 72);
+        img.into_rgb8().write_with_encoder(encoder).map_err(|e| {
+            // Half a jpeg on disk would be served forever after.
+            let _ = std::fs::remove_file(&out);
+            e.to_string()
+        })?;
+        Ok::<_, String>(out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|out| {
+        serve(&app, &out);
+        out.to_string_lossy().to_string()
+    })
+}
+
 fn cache_key(file: &Path, mtime: f64, width: u32) -> String {
     let mut hasher = Sha1::new();
     hasher.update(format!("{}|{}|{}", file.to_string_lossy(), mtime, width));

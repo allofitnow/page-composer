@@ -3,11 +3,11 @@ import path from 'node:path';
 import express from 'express';
 import { config, roots, ROOT_DIR, applyRoots, saveConfig, saveCredentials, reachable } from './config.js';
 import { listProjects, getProject, invalidateAll, decodeId, resolveRel, mergeIds } from './scan.js';
-import { thumbnail, preview } from './thumbs.js';
+import { thumbnail, preview, cmsThumb } from './thumbs.js';
 import { ffmpegStatus, probe, videoInfo } from './ffmpeg.js';
 import { parseCopyDoc, validate, TAXONOMY } from './copydoc.js';
 import { startCompose, getJob, plan } from './compose.js';
-import { publish, payloadStatus, checkLogin, setCredentials, clearCredentials, serviceCategories } from './payload.js';
+import { publish, payloadStatus, checkLogin, setCredentials, clearCredentials, serviceCategories, listWorkOrder, saveWorkOrder, cmsProject, cmsMedia, saveCmsGallery } from './payload.js';
 import { safeJoin } from './util.js';
 
 const app = express();
@@ -201,6 +201,34 @@ app.post('/api/payload/logout', wrap((_req, res) => {
   saveCredentials(config.payload.email || '', '');
   config.payload.password = '';
   res.json({ ok: true });
+}));
+
+app.get('/api/work-order', wrap(async (_req, res) => res.json(await listWorkOrder())));
+
+// No progress channel here, so this only answers when every write is done --
+// the desktop build reports per project over an event instead.
+app.post('/api/work-order', wrap(async (req, res) => {
+  res.json(await saveWorkOrder(req.body.changes || []));
+}));
+
+// A thumbnail for a file that lives in the CMS rather than on a root. Most of
+// what sits in a gallery is video, so this cannot just be a redirect to the url
+// — it has to come back as a poster frame.
+app.get('/api/cms-thumb', wrap(async (req, res) => {
+  const url = String(req.query.url || '');
+  if (!/^https?:\/\//.test(url)) return res.status(400).json({ error: 'a url is required' });
+  const width = Math.min(Number(req.query.w) || 420, 1800);
+  const file = await cmsThumb(url, width);
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(file, { dotfiles: 'allow' });
+}));
+
+app.get('/api/cms-media', wrap(async (req, res) => res.json(await cmsMedia(req.query.query))));
+
+app.get('/api/cms-project/:id', wrap(async (req, res) => res.json(await cmsProject(req.params.id))));
+
+app.post('/api/cms-project/:id/gallery', wrap(async (req, res) => {
+  res.json(await saveCmsGallery(req.params.id, req.body.rows || []));
 }));
 
 app.post('/api/publish', wrap(async (req, res) => {

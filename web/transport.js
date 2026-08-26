@@ -52,6 +52,11 @@ export const rpc = isTauri
       planCompose: (body) => invoke('plan_compose', body),
       startCompose: (body) => invoke('start_compose', body),
       publish: ({ fields, manifestPath }) => invoke('publish_project', { fields, manifestPath }),
+      listWorkOrder: () => invoke('list_work_order'),
+      saveWorkOrder: (changes) => invoke('save_work_order', { changes }),
+      cmsProject: (id) => invoke('cms_project', { id }),
+      cmsMedia: (query) => invoke('cms_media', { query }),
+      saveCmsGallery: (id, rows) => invoke('save_cms_gallery', { id, rows }),
       payloadLogin: ({ email, password, remember }) => invoke('payload_login', { email, password, remember }),
       payloadLogout: () => invoke('payload_logout'),
     }
@@ -68,6 +73,11 @@ export const rpc = isTauri
       planCompose: (body) => httpPost('/api/plan', body),
       startCompose: (body) => httpPost('/api/compose', body),
       publish: ({ fields, manifestPath }) => httpPost('/api/publish', { fields, manifestPath }),
+      listWorkOrder: () => http('/api/work-order'),
+      saveWorkOrder: (changes) => httpPost('/api/work-order', { changes }),
+      cmsProject: (id) => http(`/api/cms-project/${id}`),
+      cmsMedia: (query) => http(`/api/cms-media?${q({ query })}`),
+      saveCmsGallery: (id, rows) => httpPost(`/api/cms-project/${id}/gallery`, { rows }),
       payloadLogin: ({ email, password, remember }) => httpPost('/api/payload/login', { email, password, remember }),
       payloadLogout: () => httpPost('/api/payload/logout', {}),
     };
@@ -110,6 +120,64 @@ export function thumbImg(projectId, rel, width, attrs = {}) {
       img.dataset.failed = '1';
     });
   return img;
+}
+
+/**
+ * An <img> for a KEY IMAGE that lives in the CMS rather than on a root.
+ *
+ * The desktop build cannot simply point at the url: the content policy allows
+ * images from `asset:` and `data:` only, and the CMS address is a runtime
+ * setting, so it could not be named in the policy even if the policy were
+ * loosened. The backend fetches, downscales and caches it instead, which lands
+ * it in the same place as every other thumbnail.
+ */
+export function cmsThumbImg(url, width, attrs = {}) {
+  const img = document.createElement('img');
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v !== undefined && v !== null && v !== false) img.setAttribute(k, String(v));
+  }
+  img.dataset.pending = '1';
+  img.addEventListener('load', () => delete img.dataset.pending, { once: true });
+  img.addEventListener(
+    'error',
+    () => {
+      delete img.dataset.pending;
+      img.dataset.failed = '1';
+    },
+    { once: true }
+  );
+  if (!url) {
+    delete img.dataset.pending;
+    img.dataset.failed = '1';
+    return img;
+  }
+  if (!isTauri) {
+    // Not the url itself: a gallery is mostly video, and an <img> cannot show
+    // an mp4. The backend answers with a poster frame either way.
+    img.src = `/api/cms-thumb?${q({ url, w: width })}`;
+    return img;
+  }
+  invoke('cms_thumb', { url, w: width })
+    .then((path) => {
+      img.src = T.core.convertFileSrc(path);
+    })
+    .catch(() => {
+      delete img.dataset.pending;
+      img.dataset.failed = '1';
+    });
+  return img;
+}
+
+/**
+ * Reorder progress, one event per project written. It matters more here than
+ * anywhere else in the app: each write blocks on a full site build, so without
+ * it a legitimate ten-minute save is indistinguishable from a hang. The HTTP
+ * backend has no event channel and still only reports at the end.
+ */
+export function onReorderProgress(handler) {
+  if (!isTauri) return () => {};
+  const unlisten = T.event.listen('reorder://progress', (e) => handler(e.payload));
+  return () => unlisten.then((f) => f()).catch(() => {});
 }
 
 /**
