@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
-import { paragraphsToSlate } from './richtext.js';
+import { paragraphsToSlate, slateToParagraphs } from './richtext.js';
 
 const api = (p) => `${config.payload.url.replace(/\/$/, '')}/api${p}`;
 
@@ -248,7 +248,10 @@ export async function publish({ fields, manifestPath, onProgress = () => {} }) {
     title: fields.title,
     slug: fields.slug,
     code: 'TEMP', // the collection's beforeChange hook derives the real code
-    status: 'published',
+    // An explicit pick on step 04 wins; blank means "as stored", which for a new
+    // project is published and for an existing one is whatever the update branch
+    // below puts back -- so re-publishing never silently re-lists an unlisted page.
+    status: fields.status || 'published',
     year: String(fields.year),
     capabilities: fields.capabilities,
     tour: fields.tour || undefined,
@@ -258,7 +261,8 @@ export async function publish({ fields, manifestPath, onProgress = () => {} }) {
     stats: (fields.stats || []).filter((s) => s.label && s.value),
     credits: (fields.credits || []).filter((c) => c.entries?.length),
     writeup: writeup.length ? writeup : undefined,
-    // Always sent, both ways, so unticking can un-feature on a re-publish.
+    // Only meaningful on a create -- the update branch below puts the stored
+    // values back, because this form has no idea what they are.
     featured: fields.featured === true,
     featuredOrder: fields.featured === true && Number.isFinite(Number(fields.featuredOrder)) ? Number(fields.featuredOrder) : null,
     ...media,
@@ -275,6 +279,23 @@ export async function publish({ fields, manifestPath, onProgress = () => {} }) {
   if (existingDocs.length) {
     onProgress({ stage: 'project', message: `updating existing project ${fields.slug}` });
     doc.order = existingDocs[0].order;
+    // Same reasoning as `order`: the form cannot know the document's status, and
+    // `unlisted` is a deliberate editorial choice (the page builds, but nothing on
+    // the site links to it). Forcing 'published' here would quietly undo that every
+    // time the project was re-published. Archive is carried over for the same reason.
+    doc.status = fields.status || existingDocs[0].status || 'published';
+    // The publish form is built from the asset folder and the copy doc, never
+    // from the document, so the Featured box reads unticked whatever the CMS
+    // holds. Sending that back would drop the project off the home marquee as
+    // a side effect of re-publishing it -- so an unticked box carries the
+    // stored values over instead, the same as `order` directly above. Ticking
+    // still features, because that one the operator actually meant. Removing a
+    // project from the marquee is a CMS-side edit now.
+    if (fields.featured !== true) {
+      doc.featured = Boolean(existingDocs[0].featured);
+      doc.featuredOrder =
+        typeof existingDocs[0].featuredOrder === 'number' ? existingDocs[0].featuredOrder : null;
+    }
     res = await fetch(api(`/projects/${existingDocs[0].id}`), { method: 'PATCH', headers: auth, body: JSON.stringify(doc) });
   } else {
     doc.order = fields.order || (await nextOrder(jwt));
@@ -527,4 +548,163 @@ export async function payloadStatus() {
   } catch {
     return { reachable: false, ...who };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Editing a project that is ALREADY in the CMS.
+//
+// The rest of this module builds a project up from an asset folder and a copy
+// doc. These three go the other way: list what the CMS holds, read one back into
+// the shape step 04 edits, and write just the fields that changed. That is what
+// lets the composer edit a live page without an asset folder in the picture.
+// ---------------------------------------------------------------------------
+
+/** Every project in the CMS, newest running order first, for the step 01 list. */
+export async function cmsProjects() {
+  const res = await fetch(api('/projects?limit=200&depth=1&sort=order'));
+  if (!res.ok) throw new Error(`could not read the CMS: ${res.status} ${await res.text()}`);
+  return ((await res.json()).docs || [])
+    .map((d) => ({
+      id: d.id,
+      title: d.title || '',
+      slug: d.slug || '',
+      code: d.code || '',
+      year: d.year || '',
+      status: d.status || 'published',
+      order: typeof d.order === 'number' ? d.order : null,
+      featured: Boolean(d.featured),
+      image: imageUrl(d.image),
+      // Shown in the list so it is obvious which pages carry a write-up. The
+      // node COUNT is not the test: an empty rich-text field is stored as one
+      // blank paragraph, not as an empty array, and 18 of the live projects are
+      // in exactly that state -- they would every one have advertised a write-up
+      // that is not there.
+      hasWriteup: slateToParagraphs(d.writeup).paragraphs.length > 0,
+    }))
+    .sort((a, b) => {
+      const oa = a.order ?? 0;
+      const ob = b.order ?? 0;
+      if (oa !== ob) return oa - ob;
+      return (parseInt(b.year, 10) || 0) - (parseInt(a.year, 10) || 0);
+    });
+}
+
+/**
+ * One CMS project read back into the `fields` shape step 04 edits.
+ *
+ * `services` come back as LABELS, not ids, because that is what the form holds
+ * and what resolveServices() expects on the way in. `writeup` is converted to
+ * the plain paragraph list -- and the original Slate is returned alongside it as
+ * `writeupOriginal`, because the conversion cannot represent an `upload` node
+ * (an image or clip dropped into the prose from the Payload admin). When the
+ * operator has not touched the write-up, publish sends the original back
+ * verbatim rather than the converted text, so those blocks survive. See
+ * `writeupDropped` for how many would otherwise be lost.
+ */
+export async function cmsProjectFields(id) {
+  const res = await fetch(api(`/projects/${encodeURIComponent(id)}?depth=2`));
+  if (!res.ok) throw new Error(`could not read the project: ${res.status} ${await res.text()}`);
+  const doc = await res.json();
+  const { paragraphs, dropped } = slateToParagraphs(doc.writeup);
+
+  return {
+    id: doc.id ?? id,
+    fields: {
+      title: doc.title || '',
+      slug: doc.slug || '',
+      year: doc.year || '',
+      tour: doc.tour || '',
+      collaborator: doc.collaborator || '',
+      summary: doc.summary || '',
+      capabilities: Array.isArray(doc.capabilities) ? doc.capabilities : [],
+      // At depth 2 a service is the populated category document.
+      services: (doc.services || [])
+        .map((v) => (v && typeof v === 'object' ? v.label : v))
+        .filter((v) => typeof v === 'string' && v),
+      stats: (doc.stats || []).map((s) => ({ label: s?.label || '', value: s?.value || '' })),
+      credits: (doc.credits || []).map((g) => ({
+        title: g?.title || '',
+        entries: (g?.entries || []).map((e) => ({ title: e?.title || '', name: e?.name || '', url: e?.url || '' })),
+      })),
+      writeup: { lead: '', body: paragraphs },
+      writeupColumns: doc.writeupColumns === '2' ? '2' : '1',
+      status: doc.status || 'published',
+      featured: Boolean(doc.featured),
+      featuredOrder: typeof doc.featuredOrder === 'number' ? doc.featuredOrder : null,
+    },
+    writeupOriginal: Array.isArray(doc.writeup) ? doc.writeup : [],
+    writeupDropped: dropped,
+    order: typeof doc.order === 'number' ? doc.order : null,
+    code: doc.code || '',
+    keyImage: doc.image?.id || '',
+    keyImageUrl: imageUrl(doc.image),
+    url: `${config.payload.url.replace(/\/$/, '')}/work/${doc.slug || ''}`,
+  };
+}
+
+/** Fields this function is willing to write. Anything else is ignored rather
+ *  than passed through, so a stray key in the form state cannot reach the CMS. */
+const EDITABLE = new Set([
+  'title', 'slug', 'year', 'tour', 'collaborator', 'summary',
+  'capabilities', 'services', 'stats', 'credits',
+  'writeup', 'writeupColumns', 'status', 'featured', 'featuredOrder',
+]);
+
+/**
+ * Writes back ONLY the keys named in `changed` -- a partial update, the same
+ * shape saveCmsGallery uses and for the same reason: leaving `data.title` unset
+ * makes the collection's beforeChange hook return early, so the generated code
+ * is left alone. Sending the whole document would also mean sending fields this
+ * form never loaded, which is how re-publishing used to wipe things.
+ *
+ * `writeupSlate`, when given, is sent verbatim instead of converting the
+ * paragraph list -- that is the untouched-write-up path that preserves inline
+ * media (see cmsProjectFields).
+ */
+export async function saveCmsFields(id, fields, changed, writeupSlate) {
+  const keys = (changed || []).filter((k) => EDITABLE.has(k));
+  if (!keys.length) return { id, written: [] };
+
+  const jwt = await login();
+  const doc = {};
+  for (const k of keys) {
+    if (k === 'writeup') {
+      if (Array.isArray(writeupSlate)) {
+        doc.writeup = writeupSlate;
+      } else {
+        const paragraphs = [fields.writeup?.lead, ...(fields.writeup?.body || [])]
+          .map((t) => String(t || '').trim())
+          .filter(Boolean);
+        doc.writeup = paragraphsToSlate(paragraphs);
+      }
+      continue;
+    }
+    if (k === 'services') {
+      const { ids } = await resolveServices(fields.services);
+      doc.services = ids;
+      continue;
+    }
+    if (k === 'stats') {
+      doc.stats = (fields.stats || []).filter((s) => s.label && s.value);
+      continue;
+    }
+    if (k === 'credits') {
+      doc.credits = (fields.credits || []).filter((c) => c.entries?.length);
+      continue;
+    }
+    if (k === 'featuredOrder') {
+      doc.featuredOrder = Number.isFinite(Number(fields.featuredOrder)) ? Number(fields.featuredOrder) : null;
+      continue;
+    }
+    doc[k] = fields[k];
+  }
+
+  const res = await fetch(api(`/projects/${encodeURIComponent(id)}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `JWT ${jwt}` },
+    body: JSON.stringify(doc),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`field write failed: ${res.status} ${text}`);
+  return { id, written: keys, doc: JSON.parse(text).doc };
 }

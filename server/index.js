@@ -7,7 +7,7 @@ import { thumbnail, preview, cmsThumb } from './thumbs.js';
 import { ffmpegStatus, probe, videoInfo } from './ffmpeg.js';
 import { parseCopyDoc, validate, TAXONOMY } from './copydoc.js';
 import { startCompose, getJob, plan } from './compose.js';
-import { publish, uploadComposed, payloadStatus, checkLogin, setCredentials, clearCredentials, serviceCategories, listWorkOrder, saveWorkOrder, cmsProject, cmsMedia, saveCmsGallery } from './payload.js';
+import { publish, uploadComposed, payloadStatus, checkLogin, setCredentials, clearCredentials, serviceCategories, listWorkOrder, saveWorkOrder, cmsProject, cmsMedia, saveCmsGallery, cmsProjects, cmsProjectFields, saveCmsFields } from './payload.js';
 import { safeJoin } from './util.js';
 
 const app = express();
@@ -22,7 +22,11 @@ app.get('/api/status', wrap(async (_req, res) => {
   res.json({
     roots: roots.map((r) => ({ label: r.label, path: r.path })),
     // Configured but unreachable — a NAS that is offline or not yet mounted.
-    offline: (config.roots || []).filter((r) => !roots.some((x) => x.path === r.path)),
+    // Matched by LABEL, not path: a root can be listed more than once as
+    // alternates (the same share as a Windows UNC path and as a macOS mount),
+    // and the one that did not resolve on this machine is not a fault to report
+    // — its sibling is serving. Only a label with no reachable path at all is.
+    offline: (config.roots || []).filter((r) => !roots.some((x) => x.label === r.label)),
     ffmpeg: await ffmpegStatus(),
     payload: await payloadStatus(),
     taxonomy: TAXONOMY,
@@ -229,6 +233,18 @@ app.get('/api/cms-thumb', wrap(async (req, res) => {
 app.get('/api/cms-media', wrap(async (req, res) => res.json(await cmsMedia(req.query.query))));
 
 app.get('/api/cms-project/:id', wrap(async (req, res) => res.json(await cmsProject(req.params.id))));
+
+// ---- Editing a project already in the CMS (no asset folder involved) ----
+app.get('/api/cms-projects', wrap(async (_req, res) => res.json(await cmsProjects())));
+
+app.get('/api/cms-fields/:id', wrap(async (req, res) => res.json(await cmsProjectFields(req.params.id))));
+
+// A partial write: only `changed` keys are sent, so nothing this form did not
+// load can be overwritten. `writeupSlate` is the untouched-write-up passthrough.
+app.post('/api/cms-fields/:id', wrap(async (req, res) => {
+  const { fields, changed, writeupSlate } = req.body || {};
+  res.json(await saveCmsFields(req.params.id, fields || {}, changed || [], writeupSlate));
+}));
 
 app.post('/api/cms-project/:id/gallery', wrap(async (req, res) => {
   res.json(await saveCmsGallery(req.params.id, req.body.rows || []));

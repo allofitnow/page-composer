@@ -267,6 +267,18 @@ const state = {
   toast: null,
   drag: null,
   settingsOpen: false,
+  // ---- Editing a page that is already in the CMS ----
+  //
+  // The composer's original job is 0 -> publish: an asset folder and a copy doc
+  // become a new page. This is the other errand -- open a page the CMS already
+  // holds and change it. `cmsMode` is which list step 01 is showing; `cmsDoc` is
+  // the opened document, and its presence is what tells the rest of the app it
+  // is editing rather than composing (there is no asset folder, no manifest, and
+  // steps 02/03 do not apply).
+  cmsMode: false,
+  cmsProjects: null,
+  cmsLoading: false,
+  cmsDoc: null, // { id, baseline, writeupOriginal, writeupDropped, code, url, keyImageUrl }
   // The WORK page's running order, loaded from the CMS on demand rather than at
   // boot: it is a separate errand from composing a page and costs a request.
   workOrderOpen: false,
@@ -428,7 +440,13 @@ function topBar() {
           'button.step',
           {
             'aria-current': String(state.screen === id),
-            disabled: held || (id !== 'pick' && !state.project),
+            // A CMS page counts as open, but only for the steps that apply to it:
+            // 02/03 act on an asset folder and its composed output, neither of
+            // which exists when the document came from the CMS.
+            disabled:
+              held ||
+              (id !== 'pick' && !state.project && !state.cmsDoc) ||
+              (state.cmsDoc && (id === 'compose' || id === 'previz')),
             // Picking a step also leaves the roots panel: it sits over the whole
             // screen, so without this the click looked like it did nothing and
             // the panel had to be closed by hand first.
@@ -865,6 +883,196 @@ function browsePanel() {
 }
 
 // ------------------------------------------------------------- 01 · picker
+// ------------------------------------------------- editing a CMS page
+//
+// Opening a project from the CMS instead of an asset folder. The form is filled
+// from the document, so unlike the compose path it KNOWS the stored values --
+// which is why publishing from here can send only what actually changed.
+
+/** The CMS project list for step 01, fetched once per visit to that tab. */
+async function loadCmsProjects() {
+  if (state.cmsLoading) return;
+  set({ cmsLoading: true });
+  try {
+    set({ cmsProjects: await rpc.cmsProjects(), cmsLoading: false });
+  } catch (err) {
+    set({ cmsLoading: false });
+    toast(err.message, 'error');
+  }
+}
+
+/**
+ * Loads one CMS project into the step 04 form and jumps there. `baseline` is a
+ * deep copy of what was loaded: publish diffs against it so an untouched field
+ * is never sent, which is what keeps a partial edit from overwriting the rest of
+ * the document.
+ */
+async function openCmsProject(id) {
+  startLoading('OPENING FROM THE CMS', '');
+  try {
+    const doc = await rpc.cmsFields(id);
+    stopLoading();
+    set({
+      cmsDoc: {
+        id: doc.id,
+        baseline: JSON.parse(JSON.stringify(doc.fields)),
+        writeupOriginal: doc.writeupOriginal || [],
+        writeupDropped: doc.writeupDropped || 0,
+        code: doc.code || '',
+        url: doc.url || '',
+        keyImageUrl: doc.keyImageUrl || '',
+      },
+      fields: doc.fields,
+      // An asset-folder project and a CMS document are mutually exclusive: the
+      // compose steps read `state.project` and would otherwise show the leftovers
+      // of whatever was open before.
+      project: null,
+      pickedIds: [],
+      gallery: [],
+      hero: null,
+      manifestPath: null,
+      job: null,
+      jobSteps: [],
+      publishResult: null,
+      screen: 'copy',
+    });
+    revalidate();
+  } catch (err) {
+    stopLoading();
+    toast(err.message, 'error');
+  }
+}
+
+/** Which editable fields differ from what was loaded. Empty means nothing to save. */
+function cmsChangedKeys() {
+  const base = state.cmsDoc?.baseline;
+  const f = state.fields;
+  if (!base || !f) return [];
+  const EDITABLE = ['title', 'slug', 'year', 'tour', 'collaborator', 'summary',
+    'capabilities', 'services', 'stats', 'credits',
+    'writeup', 'writeupColumns', 'status', 'featured', 'featuredOrder'];
+  // Deep compare by serialisation: every one of these is plain JSON, and it
+  // catches a reordered array (which IS a change) without a bespoke comparator.
+  return EDITABLE.filter((k) => JSON.stringify(f[k] ?? null) !== JSON.stringify(base[k] ?? null));
+}
+
+/**
+ * Writes the changed fields back. Only the diff is sent; the write-up is sent as
+ * its ORIGINAL Slate when untouched, so inline images and clips dropped into the
+ * prose from the Payload admin are not converted away.
+ */
+async function runCmsSave() {
+  if (!state.status?.payload?.credentials) {
+    openLogin('Saving needs a CMS login. Sign in and the save will continue.');
+    return;
+  }
+  const changed = cmsChangedKeys();
+  if (!changed.length) {
+    toast('Nothing changed');
+    return;
+  }
+  set({ publishing: true });
+  startLoading('SAVING TO THE CMS', state.cmsDoc?.url || '');
+  try {
+    const untouchedWriteup = !changed.includes('writeup');
+    const res = await rpc.saveCmsFields(
+      state.cmsDoc.id,
+      state.fields,
+      changed,
+      untouchedWriteup ? state.cmsDoc.writeupOriginal : undefined
+    );
+    stopLoading();
+    // The saved document becomes the new baseline, so a second save sends only
+    // what changed after this one rather than repeating the whole diff.
+    set({
+      publishing: false,
+      cmsDoc: { ...state.cmsDoc, baseline: JSON.parse(JSON.stringify(state.fields)) },
+      publishResult: { slug: state.fields.slug, mediaCount: 0, url: state.cmsDoc.url, fields: res.written },
+    });
+    const summary = `${state.fields.slug} — ${res.written.length} field${res.written.length === 1 ? '' : 's'}, rebuild queued`;
+    toast(`Saved ${summary}`);
+    notify('Saved to the CMS', summary);
+  } catch (err) {
+    stopLoading();
+    set({ publishing: false });
+    toast(err.message, 'error');
+    notify('Save failed', err.message);
+  }
+}
+
+/** The CMS project list on step 01 — the pages that already exist. */
+function cmsPickList() {
+  const q = state.search.trim().toLowerCase();
+  const all = state.cmsProjects || [];
+  const list = all.filter(
+    (p) => !q || p.title.toLowerCase().includes(q) || p.slug.includes(q) || (p.code || '').toLowerCase().includes(q)
+  );
+
+  return h(
+    'div',
+    { style: { display: 'flex', flexDirection: 'column', gap: '13px' } },
+    h(
+      'label',
+      { style: { display: 'flex', alignItems: 'center', gap: '11px', border: '1px solid var(--rule)', padding: '11px 14px' } },
+      IC.search(),
+      h('input.m', {
+        id: 'q',
+        value: state.search,
+        placeholder: 'FILTER BY NAME, SLUG OR CODE',
+        style: { flex: '1 1 auto', fontSize: '11px', letterSpacing: '0.1em', outline: 'none' },
+        onInput: (e) => {
+          state.search = e.target.value;
+          render();
+        },
+      })
+    ),
+    h(
+      'div',
+      {},
+      h(
+        'div.prow.m',
+        { style: { fontSize: '9px', letterSpacing: '0.22em', color: 'var(--cw45)', borderBottom: '1px solid var(--cw)', padding: '0 16px 10px' } },
+        h('span', {}, 'CODE'),
+        h('span', {}, 'PROJECT'),
+        h('span', {}, 'YEAR'),
+        h('span', {}, 'STATUS'),
+        h('span', {}, 'WRITE-UP'),
+        h('span', {}, 'ORDER')
+      ),
+      state.cmsLoading
+        ? h('span.m.dimmer', { style: { display: 'block', padding: '18px 16px', fontSize: '9.5px', letterSpacing: '0.18em' } }, 'READING THE CMS…')
+        : list.length
+          ? list.map((p) =>
+              h(
+                'button.prow',
+                { title: `Open ${p.slug} for editing`, onClick: () => openCmsProject(p.id) },
+                h('span.m', { style: { fontSize: '11px', letterSpacing: '0.12em' } }, p.code || '—'),
+                h('span.prow__name.trunc', {}, p.title),
+                h('span.m', { style: { fontSize: '11px' } }, p.year || '—'),
+                h(
+                  'span.m',
+                  {
+                    style: {
+                      fontSize: '9.5px',
+                      letterSpacing: '0.16em',
+                      // Unlisted and archive are the ones worth spotting in a long
+                      // run; published is the norm and stays quiet.
+                      color: p.status === 'published' ? 'var(--cw45)' : 'var(--cw)',
+                    },
+                  },
+                  (p.status || '').toUpperCase()
+                ),
+                p.hasWriteup
+                  ? h('span.m', { style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9.5px', letterSpacing: '0.16em' } }, IC.check(), 'YES')
+                  : h('span.m.dimmer', { style: { fontSize: '9.5px', letterSpacing: '0.16em' } }, 'NONE'),
+                h('span.m', { style: { fontSize: '9.5px', letterSpacing: '0.12em' } }, p.order ?? '—')
+              )
+            )
+          : h('span.m.dimmer', { style: { display: 'block', padding: '18px 16px', fontSize: '9.5px', letterSpacing: '0.18em' } }, all.length ? 'NOTHING MATCHES THAT FILTER' : 'NO PAGES IN THE CMS')
+    )
+  );
+}
+
 function screenPick() {
   const roots = state.status?.roots || [];
   const q = state.search.trim().toLowerCase();
@@ -884,16 +1092,38 @@ function screenPick() {
       h(
         'div',
         { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' } },
-        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '14px' } }, h('span.ov', {}, 'Step 01'), h('h1', {}, 'Select a project')),
+        h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: '14px' } },
+          h('span.ov', {}, 'Step 01'),
+          h('h1', {}, state.cmsMode ? 'Edit a live page' : 'Select a project')
+        ),
         h(
           'div',
           { style: { display: 'flex', gap: '5px' } },
-          roots.map((r) =>
-            h('button.chip', { 'aria-pressed': String(state.rootFilter === r.label), onClick: () => set({ rootFilter: state.rootFilter === r.label ? null : r.label }) }, r.label)
-          )
+          // Which list this step is showing. An asset folder builds a page from
+          // scratch; a CMS page is one that already exists and is being changed.
+          h('button.chip', { 'aria-pressed': String(!state.cmsMode), onClick: () => set({ cmsMode: false }) }, 'ASSET FOLDERS'),
+          h(
+            'button.chip',
+            {
+              'aria-pressed': String(state.cmsMode),
+              onClick: () => {
+                set({ cmsMode: true });
+                if (!state.cmsProjects) loadCmsProjects();
+              },
+            },
+            'LIVE PAGES'
+          ),
+          state.cmsMode
+            ? null
+            : roots.map((r) =>
+                h('button.chip', { 'aria-pressed': String(state.rootFilter === r.label), onClick: () => set({ rootFilter: state.rootFilter === r.label ? null : r.label }) }, r.label)
+              )
         )
       ),
-      (state.status?.offline || []).length
+      state.cmsMode ? cmsPickList() : null,
+      !state.cmsMode && (state.status?.offline || []).length
         ? h(
             'button',
             { style: { display: 'flex', alignItems: 'center', gap: '11px', border: '1px solid var(--cw45)', padding: '11px 14px', textAlign: 'left' }, onClick: openSettings },
@@ -902,7 +1132,7 @@ function screenPick() {
             h('span.m.dimmer', { style: { fontSize: '8.5px', letterSpacing: '0.18em' } }, 'OPEN SETTINGS')
           )
         : null,
-      h(
+      state.cmsMode ? null : h(
         'label',
         { style: { display: 'flex', alignItems: 'center', gap: '11px', border: '1px solid var(--rule)', padding: '11px 14px' } },
         IC.search(),
@@ -917,7 +1147,7 @@ function screenPick() {
           },
         })
       ),
-      h(
+      state.cmsMode ? null : h(
         'div',
         {},
         h(
@@ -960,7 +1190,16 @@ function screenPick() {
       'div.pane.pane--r',
       { style: { width: '390px', padding: '38px 30px', gap: '22px' } },
       h('span.ov', {}, 'Preview'),
-      sel
+      // The preview describes an ASSET FOLDER — its stills, clips and default
+      // name. None of that applies to a live page, and leaving it up showed the
+      // last-picked folder beside an unrelated list, which read as a selection.
+      state.cmsMode
+        ? h(
+            'span.m.dimmer',
+            { style: { fontSize: '9.5px', letterSpacing: '0.14em', lineHeight: 1.7 } },
+            'PICK A PAGE TO OPEN IT FOR EDITING.'
+          )
+        : sel
         ? [
             h(
               'div',
@@ -2676,16 +2915,55 @@ function screenCopy() {
       )
     );
 
+  // The only <select> on this form. `h()` sets everything with setAttribute, and
+  // a <select> has no `value` attribute — the same trap the <textarea> note in
+  // h() describes — so the current choice is carried by `selected` on the option.
+  const selectField = (label, key, options, opts = {}) =>
+    h(
+      'div',
+      { style: { display: 'flex', flexDirection: 'column', gap: '7px' } },
+      fieldLabel(label, opts.required),
+      h(
+        'select.field',
+        { onChange: (e) => setField(key, e.target.value) },
+        options.map(([value, text]) =>
+          h('option', { value, selected: (f[key] || '') === value || undefined }, text)
+        )
+      ),
+      desc(opts.desc)
+    );
+
   // The key image is not typed here — it is the hero picked on step 02. Showing
   // it keeps the form honest about what will actually publish, since `image` is
   // required by the collection and there is nowhere else on this screen to see it.
-  const heroName = plannedNames(state).find((n) => n.role === 'hero');
+  // No asset folder means no planned output names; the CMS branch below never
+  // reads this, but it must not throw on the way past.
+  const heroName = state.cmsDoc ? null : plannedNames(state).find((n) => n.role === 'hero');
   const imageField = () =>
     h(
       'div',
       { style: { display: 'flex', flexDirection: 'column', gap: '7px' } },
       fieldLabel('Image', true),
-      state.hero
+      // A page opened from the CMS already HAS a key image, and this form has no
+      // way to change it -- swapping the hero is a compose-side job. Show what is
+      // on the document instead of the "no hero picked" alarm, which would be
+      // both wrong and unactionable here.
+      state.cmsDoc
+        ? h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: '14px', border: '1px solid var(--rule)', padding: '10px' } },
+            state.cmsDoc.keyImageUrl
+              ? h('span', { style: { flex: '0 0 auto', width: '96px', height: '64px', overflow: 'hidden' } },
+                  h('img', { src: state.cmsDoc.keyImageUrl, alt: '', style: { width: '100%', height: '100%', objectFit: 'cover' } }))
+              : null,
+            h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: '5px', minWidth: 0 } },
+              h('span.m.trunc', { style: { fontSize: '10px' } }, 'The key image already on the page'),
+              h('span.m.dimmer', { style: { fontSize: '8.5px', letterSpacing: '0.12em' } }, 'UNCHANGED BY THIS EDIT')
+            )
+          )
+        : state.hero
         ? h(
             'div',
             {
@@ -2717,7 +2995,70 @@ function screenCopy() {
   return h(
     'div.screen',
     {},
-    h(
+    // A page opened from the CMS has no copy doc behind it -- the document IS the
+    // source. The left pane shows what was loaded and what has been touched
+    // instead of a parser report there is nothing to report on.
+    state.cmsDoc
+    ? h(
+      'div.pane.pane--l.scroll',
+      { style: { width: '600px', padding: '28px 30px', gap: '18px' } },
+      h(
+        'div',
+        { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' } },
+        h('span.ov', {}, 'Live Page'),
+        h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.14em' } }, (state.cmsDoc.code || '').toUpperCase())
+      ),
+      h(
+        'div',
+        { style: { border: '1px solid var(--rule)', padding: '14px', display: 'flex', flexDirection: 'column', gap: '9px' } },
+        h('p.m.dimmer', { style: { margin: 0, fontSize: '9.5px', lineHeight: 1.7, letterSpacing: '0.08em' } },
+          'Loaded from the CMS. Change anything below and step 05 writes back only the fields you touched \u2014 the gallery, the key image and the running order are left alone.'),
+        h(
+          'div',
+          { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
+          // Images are not fields, so they do not go through the step 05 diff --
+          // the gallery editor writes its own partial update. Same document,
+          // different errand, so it is reachable from here rather than only from
+          // the work-page screen.
+          h('button.chip', { type: 'button', onClick: () => openCmsGallery(state.cmsDoc.id) }, 'EDIT GALLERY & IMAGES'),
+          state.cmsDoc.url
+            ? h('button.chip', { type: 'button', onClick: () => openExternal(state.cmsDoc.url) }, 'VIEW THE PAGE')
+            : null
+        )
+      ),
+      state.cmsDoc.writeupDropped > 0
+        ? h(
+            'div',
+            { style: { border: '1px solid #ff9b9b', padding: '13px 15px' } },
+            h('p.m', { style: { margin: 0, fontSize: '9px', letterSpacing: '0.12em', lineHeight: 1.7, color: '#ff9b9b' } },
+              `THE WRITE-UP HOLDS ${state.cmsDoc.writeupDropped} INLINE IMAGE${state.cmsDoc.writeupDropped === 1 ? '' : 'S'} OR CLIP${state.cmsDoc.writeupDropped === 1 ? '' : 'S'} THAT THIS TEXT EDITOR CANNOT SHOW. THEY ARE STILL ON THE PAGE. EDIT THE WRITE-UP AND THEY GO \u2014 LEAVE IT ALONE AND THEY STAY.`)
+          )
+        : null,
+      h(
+        'div',
+        {},
+        h(
+          'div',
+          { style: { display: 'grid', gridTemplateColumns: '128px 1fr', gap: '14px', padding: '0 0 8px', borderBottom: '1px solid var(--cw)' } },
+          h('span.m.dim', { style: { fontSize: '8.5px', letterSpacing: '0.22em' } }, 'FIELD'),
+          h('span.m.dim', { style: { fontSize: '8.5px', letterSpacing: '0.22em' } }, 'STATE')
+        ),
+        (() => {
+          const changed = cmsChangedKeys();
+          return changed.length
+            ? changed.map((k) =>
+                h(
+                  'div',
+                  { style: { display: 'grid', gridTemplateColumns: '128px 1fr', gap: '14px', padding: '11px 0', borderBottom: '1px solid var(--rule)' } },
+                  h('span.m', { style: { fontSize: '8.5px', letterSpacing: '0.16em', color: 'var(--cw)' } }, k),
+                  h('span.m', { style: { fontSize: '10.5px', color: 'var(--cw80)' } }, 'changed')
+                )
+              )
+            : h('span.m.dimmer', { style: { display: 'block', padding: '14px 0', fontSize: '9.5px', letterSpacing: '0.16em' } }, 'NOTHING CHANGED YET');
+        })()
+      )
+    )
+    : h(
       'div.pane.pane--l.scroll',
       { style: { width: '600px', padding: '28px 30px', gap: '18px' } },
       h(
@@ -2911,6 +3252,21 @@ function screenCopy() {
         },
         h('span.ov', { style: { fontSize: '8.5px', letterSpacing: '0.22em', color: 'var(--cw45)' } }, 'Sidebar'),
         textField('Slug', 'slug', { required: true, desc: 'The /work/ URL. Must be unique across the whole site.' }),
+        // Left blank, this changes nothing: a new project publishes live, and an
+        // existing one keeps whatever the CMS already holds. Only an explicit
+        // pick is sent — the form is built from the asset folder, never from the
+        // document, so a default here would silently overwrite the real status.
+        selectField(
+          'Status',
+          'status',
+          [
+            ['', 'AS STORED — publish new, keep existing'],
+            ['published', 'PUBLISHED — live and listed on the work page'],
+            ['unlisted', 'UNLISTED — page builds, nothing links to it'],
+            ['archive', 'ARCHIVE — no page at all, CMS only'],
+          ],
+          { desc: 'Unlisted builds the /work/ page and leaves the URL working, but keeps it out of the work grid, the home marquee and prev/next — for a link you hand out directly.' }
+        ),
         checkField('Featured', 'featured', 'Puts the project on the home page as well as the work grid.'),
         // The order only means anything once it is featured, so it only appears
         // then — a number sitting under an unticked box invites filling in.
@@ -2933,8 +3289,12 @@ function screenCopy() {
       h(
         'div',
         { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', paddingTop: '16px', borderTop: '1px solid var(--rule)' } },
-        h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.14em' } }, 'ORDER IS ASSIGNED ON PUBLISH'),
-        h('button.btn', { onClick: () => set({ screen: 'export' }) }, 'CONTINUE TO EXPORT')
+        h(
+          'span.m.dimmer',
+          { style: { fontSize: '9px', letterSpacing: '0.14em' } },
+          state.cmsDoc ? 'ONLY WHAT YOU CHANGE GETS WRITTEN' : 'ORDER IS ASSIGNED ON PUBLISH'
+        ),
+        h('button.btn', { onClick: () => set({ screen: 'export' }) }, state.cmsDoc ? 'REVIEW CHANGES' : 'CONTINUE TO EXPORT')
       )
     )
   );
@@ -3162,7 +3522,111 @@ async function runPublish() {
   }
 }
 
+/**
+ * Step 05 for a page opened FROM the CMS. There is no manifest and nothing to
+ * compose, so the whole compose report is replaced by the one thing that matters
+ * here: exactly which fields differ from what was loaded, and a button to write
+ * those and only those back.
+ */
+function screenCmsSave() {
+  const v = state.validation;
+  const changed = cmsChangedKeys();
+  const doc = state.cmsDoc;
+  // The write-up cannot carry inline media through the text conversion, so
+  // editing it is the one change that can lose something. Only warn when that is
+  // actually in play: the page has such blocks AND the write-up was touched.
+  const willDropMedia = changed.includes('writeup') && (doc?.writeupDropped || 0) > 0;
+  const canSave = changed.length > 0 && v?.ok && !state.publishing;
+
+  const row = (label, value) =>
+    h(
+      'div',
+      { style: { display: 'flex', justifyContent: 'space-between', gap: '16px', padding: '9px 0', borderBottom: '1px solid var(--rule)' } },
+      h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.18em' } }, label),
+      h('span.m', { style: { fontSize: '10px', letterSpacing: '0.08em', textAlign: 'right' } }, value)
+    );
+
+  return h(
+    'div.screen',
+    {},
+    h(
+      'div.pane.pane--main.scroll',
+      { style: { padding: '32px 36px', gap: '20px' } },
+      h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
+        h('span.ov', {}, 'Step 05'),
+        h('h1', { style: { margin: 0, fontWeight: 500, fontSize: '40px', lineHeight: 1 } }, 'Save changes')
+      ),
+      h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', paddingTop: '20px' } },
+        row('PROJECT', state.fields?.title || ''),
+        row('CODE', doc?.code || '—'),
+        row('URL', `/work/${state.fields?.slug || ''}`),
+        row('STATUS', (state.fields?.status || 'published').toUpperCase())
+      ),
+      h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: '11px', paddingTop: '26px' } },
+        h('span.ov', { style: { fontSize: '8.5px', letterSpacing: '0.22em' } }, 'Fields that changed'),
+        changed.length
+          ? h(
+              'div',
+              { style: { display: 'flex', flexWrap: 'wrap', gap: '5px' } },
+              changed.map((k) => h('span.chip', { 'aria-pressed': 'true' }, k.toUpperCase()))
+            )
+          : h('span.m.dimmer', { style: { fontSize: '9.5px', letterSpacing: '0.16em' } }, 'NOTHING CHANGED YET — EDIT ON STEP 04'),
+        h(
+          'span.m.dimmer',
+          { style: { fontSize: '8.5px', letterSpacing: '0.06em', lineHeight: 1.6 } },
+          'Only these are written. Every other field on the document is left exactly as it is — including the gallery, the key image and the running order.'
+        )
+      ),
+      willDropMedia
+        ? h(
+            'div',
+            { style: { display: 'flex', gap: '11px', border: '1px solid #ff9b9b', padding: '13px 15px', marginTop: '22px' } },
+            h(
+              'span.m',
+              { style: { fontSize: '9px', letterSpacing: '0.12em', lineHeight: 1.7, color: '#ff9b9b' } },
+              `THIS WRITE-UP HAS ${doc.writeupDropped} INLINE IMAGE${doc.writeupDropped === 1 ? '' : 'S'} OR CLIP${doc.writeupDropped === 1 ? '' : 'S'} THAT THE TEXT EDITOR CANNOT HOLD. SAVING THE WRITE-UP WILL REMOVE ${doc.writeupDropped === 1 ? 'IT' : 'THEM'}. LEAVE THE WRITE-UP ALONE AND ${doc.writeupDropped === 1 ? 'IT SURVIVES' : 'THEY SURVIVE'} UNTOUCHED.`
+            )
+          )
+        : null
+    ),
+    h(
+      'div.pane.pane--r.scroll',
+      { style: { width: '370px', padding: '32px 28px', gap: '22px' } },
+      h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: '13px' } },
+        h('span.ov', {}, 'Write back'),
+        h(
+          'span.m.dimmer',
+          { style: { fontSize: '8.5px', letterSpacing: '0.18em' } },
+          !v?.ok ? `COPY INCOMPLETE — MISSING ${(v?.missing || []).join(', ').toUpperCase()}` : !changed.length ? 'NOTHING TO SAVE' : state.status?.payload?.credentials ? `READY — ${changed.length} FIELD${changed.length === 1 ? '' : 'S'}` : 'READY — WILL ASK YOU TO SIGN IN'
+        ),
+        h('button.btn', { disabled: !canSave || undefined, onClick: runCmsSave }, state.publishing ? 'SAVING…' : 'SAVE TO THE CMS'),
+        h('button.btn.btn--ghost', { type: 'button', onClick: () => openCmsGallery(doc.id) }, 'EDIT GALLERY & IMAGES'),
+        doc?.url
+          ? h('button.btn.btn--ghost', { type: 'button', onClick: () => openExternal(doc.url) }, 'VIEW THE PAGE')
+          : null,
+        state.publishResult
+          ? h(
+              'span.m.dimmer',
+              { style: { fontSize: '8.5px', letterSpacing: '0.14em', lineHeight: 1.7, paddingTop: '10px', borderTop: '1px solid var(--rule)' } },
+              `SAVED ${(state.publishResult.fields || []).join(', ').toUpperCase()} — REBUILD QUEUED`
+            )
+          : null
+      )
+    )
+  );
+}
+
 function screenExport() {
+  // A page opened from the CMS has no compose job behind it.
+  if (state.cmsDoc) return screenCmsSave();
   const steps = state.jobSteps.length ? state.jobSteps : plannedNames(state).map((n) => ({ ...n, status: 'queued', bytesOut: 0, sourceName: n.asset?.name, bytesIn: n.asset?.size || 0, kind: n.asset?.kind }));
   const done = steps.filter((s) => s.status === 'done').length;
   const failed = steps.filter((s) => s.status === 'failed');
@@ -4750,7 +5214,7 @@ function render() {
         ? workOrderPanel()
         : state.settingsOpen
           ? settingsPanel()
-          : (state.project || state.screen === 'pick' ? SCREENS[state.screen] : screenPick)(),
+          : (state.project || state.cmsDoc || state.screen === 'pick' ? SCREENS[state.screen] : screenPick)(),
       state.login ? loginModal() : null,
       state.loading && !state.loading.inline ? loadingOverlay() : null,
       state.toast ? h('div.toast', { 'data-kind': state.toast.kind }, state.toast.message) : null,

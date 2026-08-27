@@ -579,7 +579,13 @@ async fn run_publish(
         "title": title,
         "slug": slug,
         "code": "TEMP", // the collection's beforeChange hook derives the real code
-        "status": "published",
+        // An explicit pick on step 04 wins; blank means "as stored", which for a
+        // new project is published and for an existing one is whatever the update
+        // branch below puts back -- so re-publishing never re-lists an unlisted page.
+        "status": match fields["status"].as_str() {
+            Some(s) if !s.is_empty() => s,
+            _ => "published",
+        },
         "year": fields["year"].as_str().unwrap_or_default(),
         "capabilities": fields["capabilities"],
         "stats": fields["stats"],
@@ -590,9 +596,8 @@ async fn run_publish(
     if !writeup.is_empty() {
         doc["writeup"] = json!(writeup);
     }
-    // Always written, both ways: unticking it on a re-publish has to be able to
-    // take a project off the home page, which an "only send it when true" rule
-    // could not do.
+    // Only meaningful on a create -- the update branch below puts the stored
+    // values back, because this form has no idea what they are.
     doc["featured"] = json!(fields["featured"].as_bool().unwrap_or(false));
     match (doc["featured"].as_bool(), fields["featuredOrder"].as_u64()) {
         (Some(true), Some(n)) => doc["featuredOrder"] = json!(n),
@@ -629,6 +634,30 @@ async fn run_publish(
     let res = if let Some(prev) = &existing_doc {
         say(app, &mut messages, format!("updating existing project {slug}"));
         doc["order"] = prev["order"].clone();
+        // Same reasoning as `order`: the form cannot know the document's status,
+        // and `unlisted` is a deliberate editorial choice (the page builds, but
+        // nothing on the site links to it). Forcing "published" here would quietly
+        // undo that on every re-publish. Archive carries over for the same reason.
+        if fields["status"].as_str().unwrap_or_default().is_empty() {
+            doc["status"] = match prev["status"].as_str() {
+                Some(s) if !s.is_empty() => json!(s),
+                _ => json!("published"),
+            };
+        }
+        // The publish form is built from the asset folder and the copy doc,
+        // never from the document, so the Featured box reads unticked whatever
+        // the CMS holds. Sending that back would drop the project off the home
+        // marquee as a side effect of re-publishing it -- so an unticked box
+        // carries the stored values over instead, the same as `order` directly
+        // above. Ticking still features, because that one the operator meant.
+        // Taking a project off the marquee is a CMS-side edit now.
+        if !fields["featured"].as_bool().unwrap_or(false) {
+            doc["featured"] = json!(prev["featured"].as_bool().unwrap_or(false));
+            doc["featuredOrder"] = match prev["featuredOrder"].as_u64() {
+                Some(n) => json!(n),
+                None => Value::Null,
+            };
+        }
         client
             .patch(api(cfg, &format!("/projects/{}", prev["id"].as_str().unwrap_or_default())))
             .header("Authorization", format!("JWT {jwt}"))

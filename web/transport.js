@@ -55,6 +55,10 @@ export const rpc = isTauri
       listWorkOrder: () => invoke('list_work_order'),
       saveWorkOrder: (changes) => invoke('save_work_order', { changes }),
       cmsProject: (id) => invoke('cms_project', { id }),
+      cmsProjects: () => invoke('cms_projects'),
+      cmsFields: (id) => invoke('cms_project_fields', { id }),
+      saveCmsFields: (id, fields, changed, writeupSlate) =>
+        invoke('save_cms_fields', { id, fields, changed, writeupSlate }),
       cmsMedia: (query) => invoke('cms_media', { query }),
       uploadComposed: ({ manifestPath, alt }) => invoke('upload_composed', { manifestPath, alt }),
       saveCmsGallery: (id, rows) => invoke('save_cms_gallery', { id, rows }),
@@ -77,6 +81,10 @@ export const rpc = isTauri
       listWorkOrder: () => http('/api/work-order'),
       saveWorkOrder: (changes) => httpPost('/api/work-order', { changes }),
       cmsProject: (id) => http(`/api/cms-project/${id}`),
+      cmsProjects: () => http('/api/cms-projects'),
+      cmsFields: (id) => http(`/api/cms-fields/${id}`),
+      saveCmsFields: (id, fields, changed, writeupSlate) =>
+        httpPost(`/api/cms-fields/${id}`, { fields, changed, writeupSlate }),
       cmsMedia: (query) => http(`/api/cms-media?${q({ query })}`),
       uploadComposed: ({ manifestPath, alt }) => httpPost('/api/upload-composed', { manifestPath, alt }),
       saveCmsGallery: (id, rows) => httpPost(`/api/cms-project/${id}/gallery`, { rows }),

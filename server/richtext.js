@@ -214,3 +214,81 @@ export function paragraphsToSlate(paragraphs) {
     .map((p) => blockToSlate(p))
     .filter(Boolean);
 }
+
+// ---------------------------------------------------------------------------
+// Slate -> Markdown. The inverse of paragraphsToSlate/inlineToSlate above, used
+// when a project is opened FROM the CMS rather than built from a copy doc: the
+// stored `writeup` has to come back as the plain paragraph list step 04 edits.
+//
+// It is deliberately not a general Slate renderer. It inverts exactly the shapes
+// blockToSlate can produce, and reports anything else as `dropped` rather than
+// guessing -- see slateToParagraphs.
+// ---------------------------------------------------------------------------
+
+/** One inline leaf/element back to Markdown. Mirrors inlineToSlate's grammar. */
+function slateInlineToMarkdown(nodes) {
+  return (nodes || [])
+    .map((n) => {
+      if (n && n.type === 'link') {
+        return `[${slateInlineToMarkdown(n.children)}](${n.url || ''})`;
+      }
+      let t = escapeMd(String(n?.text ?? ''));
+      if (!t) return '';
+      // Order mirrors the parser: the both-marks case is written `***x***`, which
+      // inlineToSlate tests before `**`, so it round-trips to the same leaf.
+      if (n.bold && n.italic) t = `***${t}***`;
+      else if (n.bold) t = `**${t}**`;
+      else if (n.italic) t = `*${t}*`;
+      if (n.underline) t = `<u>${t}</u>`;
+      if (n.code) t = `\`${t}\``;
+      return t;
+    })
+    .join('');
+}
+
+/** A list block (`ul`/`ol`) back to one marker-prefixed line per item. */
+function listToMarkdown(node) {
+  const ordered = node.type === 'ol';
+  return (node.children || [])
+    .map((li, i) => `${ordered ? `${i + 1}.` : '-'} ${slateInlineToMarkdown(li?.children)}`)
+    .join('\n');
+}
+
+/**
+ * The CMS `writeup` value -> { paragraphs, dropped }.
+ *
+ * `dropped` counts blocks that CANNOT survive the trip -- in practice `upload`
+ * nodes, the inline images and clips an editor dropped into the prose from the
+ * Payload admin. There is no paragraph text that represents one, so re-publishing
+ * a hydrated write-up would silently delete them. The count is returned so the
+ * caller can keep the original Slate and only send the converted paragraphs when
+ * the operator has actually edited them (see cmsProjectFields).
+ */
+export function slateToParagraphs(value) {
+  const paragraphs = [];
+  let dropped = 0;
+  for (const node of Array.isArray(value) ? value : []) {
+    if (!node || typeof node !== 'object') continue;
+    const type = node.type;
+    if (type === 'ul' || type === 'ol') {
+      paragraphs.push(listToMarkdown(node));
+      continue;
+    }
+    const heading = /^h([1-6])$/.exec(type || '');
+    if (heading) {
+      paragraphs.push(`${'#'.repeat(Number(heading[1]))} ${slateInlineToMarkdown(node.children)}`);
+      continue;
+    }
+    if (type === 'blockquote') {
+      paragraphs.push(`> ${slateInlineToMarkdown(node.children)}`);
+      continue;
+    }
+    if (type === 'upload' || (type && type !== 'paragraph')) {
+      dropped++;
+      continue;
+    }
+    const text = slateInlineToMarkdown(node.children);
+    if (text.trim()) paragraphs.push(text);
+  }
+  return { paragraphs, dropped };
+}

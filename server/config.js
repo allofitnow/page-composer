@@ -33,23 +33,35 @@ export const reachable = (p) => {
   }
 };
 
-/** Only roots that resolve right now — a NAS being offline must not be fatal. */
+/** Only roots that resolve right now — a NAS being offline must not be fatal.
+ *
+ *  Entries SHARING A LABEL are alternates of one logical root, not separate roots:
+ *  the same share addressed as a Windows UNC path and as a macOS /Volumes mount.
+ *  The first alternate that resolves on THIS machine wins, so one config.json can
+ *  be carried between the two boxes unedited. That matters because a label is part
+ *  of every project id — renaming a duplicate to make it unique (the old behaviour)
+ *  would have silently changed every id the moment the file was opened on a Mac. */
 export function applyRoots(list) {
-  const seen = new Set();
   const normalised = list
     .map((r, i) => {
       const p = String(r.path || '').trim().replace(/[\\/]+$/, '');
-      let label = String(r.label || '').trim() || path.basename(p) || `ROOT ${i + 1}`;
-      // Labels are part of every project id, so they have to be unique.
-      while (seen.has(label)) label += '*';
-      seen.add(label);
+      const label = String(r.label || '').trim() || path.basename(p) || `ROOT ${i + 1}`;
       return { label, path: p };
     })
     .filter((r) => r.path);
 
+  // Every entry is kept in `config.roots` — including the ones that do not resolve
+  // here — so saving the config from either machine preserves the other's paths.
   config.roots = normalised;
+
   roots.length = 0;
-  roots.push(...normalised.filter((r) => reachable(r.path)));
+  const resolved = new Set();
+  for (const r of normalised) {
+    if (resolved.has(r.label)) continue; // an alternate of a root already resolved
+    if (!reachable(r.path)) continue;
+    resolved.add(r.label);
+    roots.push(r);
+  }
   return normalised;
 }
 
