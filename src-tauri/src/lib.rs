@@ -222,6 +222,9 @@ pub fn run() {
             payload::cms_media,
             payload::upload_composed,
             payload::save_cms_gallery,
+            payload::cms_projects,
+            payload::cms_project_fields,
+            payload::save_cms_fields,
             payload::payload_login,
             payload::payload_logout,
         ])

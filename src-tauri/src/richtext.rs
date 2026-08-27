@@ -394,3 +394,202 @@ mod tests {
         assert_eq!(paragraphs_to_slate(&["".to_string(), "   ".to_string()]), Vec::<Value>::new());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Slate -> Markdown. The inverse of paragraphs_to_slate/inline_to_slate above,
+// used when a project is opened FROM the CMS rather than built from a copy doc:
+// the stored `writeup` has to come back as the plain paragraph list step 04
+// edits. Kept in step with slateToParagraphs in server/richtext.js.
+//
+// It is not a general Slate renderer. It inverts exactly the shapes
+// block_to_slate can produce and COUNTS anything else as dropped rather than
+// guessing -- in practice `upload` nodes, the inline images and clips an editor
+// dropped into the prose, which no paragraph of text can represent.
+// ---------------------------------------------------------------------------
+
+/// Characters that would otherwise be read back as markup.
+fn escape_md(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | '`' | '*' | '_' | '[' | ']') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// One run of inline leaves/elements back to Markdown.
+fn inline_to_markdown(nodes: Option<&Vec<Value>>) -> String {
+    let Some(nodes) = nodes else { return String::new() };
+    let mut out = String::new();
+    for n in nodes {
+        if n["type"].as_str() == Some("link") {
+            let inner = inline_to_markdown(n["children"].as_array());
+            out.push_str(&format!("[{}]({})", inner, n["url"].as_str().unwrap_or_default()));
+            continue;
+        }
+        let text = n["text"].as_str().unwrap_or_default();
+        if text.is_empty() {
+            continue;
+        }
+        let mut t = escape_md(text);
+        let bold = n["bold"].as_bool().unwrap_or(false);
+        let italic = n["italic"].as_bool().unwrap_or(false);
+        // Order mirrors the parser: the both-marks case is written `***x***`,
+        // which inline_to_slate tests before `**`.
+        if bold && italic {
+            t = format!("***{t}***");
+        } else if bold {
+            t = format!("**{t}**");
+        } else if italic {
+            t = format!("*{t}*");
+        }
+        if n["underline"].as_bool().unwrap_or(false) {
+            t = format!("<u>{t}</u>");
+        }
+        if n["code"].as_bool().unwrap_or(false) {
+            t = format!("`{t}`");
+        }
+        out.push_str(&t);
+    }
+    out
+}
+
+/// A `ul`/`ol` back to one marker-prefixed line per item.
+fn list_to_markdown(node: &Value) -> String {
+    let ordered = node["type"].as_str() == Some("ol");
+    node["children"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .enumerate()
+                .map(|(i, li)| {
+                    let marker = if ordered { format!("{}.", i + 1) } else { "-".to_string() };
+                    format!("{} {}", marker, inline_to_markdown(li["children"].as_array()))
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default()
+}
+
+/// The CMS `writeup` value -> (paragraphs, dropped).
+///
+/// `dropped` counts blocks that cannot survive the trip. The caller keeps the
+/// original Slate and only sends the converted paragraphs when the operator has
+/// actually edited them, so those blocks are not silently deleted.
+pub fn slate_to_paragraphs(value: &Value) -> (Vec<String>, usize) {
+    let mut paragraphs = Vec::new();
+    let mut dropped = 0usize;
+    let Some(nodes) = value.as_array() else { return (paragraphs, dropped) };
+    for node in nodes {
+        if !node.is_object() {
+            continue;
+        }
+        let ty = node["type"].as_str();
+        match ty {
+            Some("ul") | Some("ol") => {
+                let t = list_to_markdown(node);
+                if !t.trim().is_empty() {
+                    paragraphs.push(t);
+                }
+            }
+            Some("blockquote") => {
+                let t = inline_to_markdown(node["children"].as_array());
+                if !t.trim().is_empty() {
+                    paragraphs.push(format!("> {}", t.trim()));
+                }
+            }
+            Some("upload") => dropped += 1,
+            Some(h) if h.len() == 2 && h.starts_with('h') && h[1..].chars().all(|c| c.is_ascii_digit()) => {
+                let level: usize = h[1..].parse().unwrap_or(2);
+                let t = inline_to_markdown(node["children"].as_array());
+                if !t.trim().is_empty() {
+                    paragraphs.push(format!("{} {}", "#".repeat(level), t.trim()));
+                }
+            }
+            // An explicitly typed paragraph is still a paragraph -- without this it
+            // would fall to the catch-all and be counted as dropped, unlike the JS
+            // side, which tests `type !== 'paragraph'` before dropping.
+            Some(_) if ty != Some("paragraph") => dropped += 1,
+            _ => {
+                let t = inline_to_markdown(node["children"].as_array());
+                if !t.trim().is_empty() {
+                    paragraphs.push(t);
+                }
+            }
+        }
+    }
+    (paragraphs, dropped)
+}
+
+#[cfg(test)]
+mod slate_to_paragraphs_tests {
+    use super::*;
+
+    /// paragraphs_to_slate -> slate_to_paragraphs must be the identity for every
+    /// shape block_to_slate can produce. These are the same cases the JS side is
+    /// checked against in server/richtext.js, so the two stay in step.
+    fn round_trip(src: &str) -> (String, usize) {
+        let slate = paragraphs_to_slate(&[src.to_string()]);
+        let (paras, dropped) = slate_to_paragraphs(&Value::Array(slate));
+        (paras.first().cloned().unwrap_or_default(), dropped)
+    }
+
+    #[test]
+    fn round_trips_every_supported_shape() {
+        for src in [
+            "A plain paragraph of prose.",
+            "Some **bold** and *italic* and ***both*** together.",
+            "A [link to somewhere](https://example.com) inline.",
+            "## AOIN Involvement",
+            "> A pulled quote.",
+            "- one\n- two\n- three",
+            "1. first\n2. second",
+            "Underlined <u>text</u> here.",
+        ] {
+            let (out, dropped) = round_trip(src);
+            assert_eq!(out, src, "round trip changed the block");
+            assert_eq!(dropped, 0, "nothing should be dropped for {src:?}");
+        }
+    }
+
+    /// An `upload` node is the one shape text cannot hold. It must be COUNTED,
+    /// never silently discarded -- that count is what stops the composer from
+    /// converting a write-up and deleting its inline media.
+    #[test]
+    fn counts_upload_nodes_rather_than_dropping_them_silently() {
+        let value = json!([
+            { "children": [{ "text": "before" }] },
+            { "type": "upload", "value": { "id": "x" }, "children": [{ "text": "" }] },
+            { "children": [{ "text": "after" }] }
+        ]);
+        let (paras, dropped) = slate_to_paragraphs(&value);
+        assert_eq!(paras, vec!["before".to_string(), "after".to_string()]);
+        assert_eq!(dropped, 1);
+    }
+
+    /// An explicitly typed paragraph is still a paragraph. Without the guard for
+    /// this it falls to the catch-all and is reported as dropped media, which
+    /// would make the composer warn about losing something that is only text.
+    #[test]
+    fn explicit_paragraph_type_is_not_counted_as_dropped() {
+        let value = json!([{ "type": "paragraph", "children": [{ "text": "hello" }] }]);
+        let (paras, dropped) = slate_to_paragraphs(&value);
+        assert_eq!(paras, vec!["hello".to_string()]);
+        assert_eq!(dropped, 0);
+    }
+
+    /// An empty rich-text field is stored as ONE BLANK paragraph, not an empty
+    /// array. Most live projects are in that state, so this must come back empty
+    /// or every one of them advertises a write-up it does not have.
+    #[test]
+    fn blank_paragraph_yields_nothing() {
+        let value = json!([{ "children": [{ "text": "" }] }]);
+        let (paras, dropped) = slate_to_paragraphs(&value);
+        assert!(paras.is_empty());
+        assert_eq!(dropped, 0);
+    }
+}

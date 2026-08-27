@@ -1216,3 +1216,305 @@ async fn next_order(client: &reqwest::Client, cfg: &Config, jwt: &str) -> i64 {
     // floor, so a fractional order left by a drag still yields a value below it
     body["docs"][0]["order"].as_f64().unwrap_or(1.0).floor() as i64 - 1
 }
+
+// ---------------------------------------------------------------------------
+// Editing a project that is ALREADY in the CMS.
+//
+// The Rust twin of cmsProjects / cmsProjectFields / saveCmsFields in
+// server/payload.js. The rest of this module builds a project up from an asset
+// folder and a copy doc; these three go the other way -- list what the CMS
+// holds, read one back into the shape step 04 edits, and write just the fields
+// that changed. Kept in step with the Node side deliberately: the two are the
+// same feature behind two transports.
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CmsListProject {
+    pub id: String,
+    pub title: String,
+    pub slug: String,
+    pub code: String,
+    pub year: String,
+    pub status: String,
+    pub order: Option<f64>,
+    pub featured: bool,
+    pub image: String,
+    pub has_writeup: bool,
+}
+
+/// Every project in the CMS, in the running order, for the step 01 list.
+#[tauri::command]
+pub async fn cms_projects(state: State<'_, AppState>) -> Result<Vec<CmsListProject>, String> {
+    let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .get(api(&cfg, "/projects?limit=200&depth=1&sort=order"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("could not read the CMS: {}", res.status()));
+    }
+    let body: Value = res.json().await.map_err(|e| e.to_string())?;
+    let mut list: Vec<CmsListProject> = body["docs"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|d| {
+                    let image = d["image"]["url"].as_str().unwrap_or_default();
+                    // The node COUNT is not the test for a write-up: an empty
+                    // rich-text field is stored as one BLANK paragraph, not as
+                    // an empty array, and most of the live projects are in that
+                    // state -- they would every one have advertised prose that
+                    // is not there.
+                    let (paras, _) = crate::richtext::slate_to_paragraphs(&d["writeup"]);
+                    CmsListProject {
+                        id: d["id"].as_str().unwrap_or_default().to_string(),
+                        title: d["title"].as_str().unwrap_or_default().to_string(),
+                        slug: d["slug"].as_str().unwrap_or_default().to_string(),
+                        code: d["code"].as_str().unwrap_or_default().to_string(),
+                        year: d["year"].as_str().unwrap_or_default().to_string(),
+                        status: d["status"].as_str().unwrap_or("published").to_string(),
+                        order: d["order"].as_f64(),
+                        featured: d["featured"].as_bool().unwrap_or(false),
+                        image: if image.is_empty() {
+                            String::new()
+                        } else if image.starts_with("http") {
+                            image.to_string()
+                        } else {
+                            format!("{}{image}", cfg.payload.url.trim_end_matches('/'))
+                        },
+                        has_writeup: !paras.is_empty(),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    // The manual running order decides; the year only breaks a tie.
+    list.sort_by(|a, b| {
+        let oa = a.order.unwrap_or(0.0);
+        let ob = b.order.unwrap_or(0.0);
+        oa.partial_cmp(&ob)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                let ya: i64 = b.year.parse().unwrap_or(0);
+                let yb: i64 = a.year.parse().unwrap_or(0);
+                ya.cmp(&yb)
+            })
+    });
+    Ok(list)
+}
+
+/// One CMS project read back into the `fields` shape step 04 edits.
+///
+/// `services` come back as LABELS, not ids, because that is what the form holds
+/// and what resolve_services expects on the way in. The original Slate is
+/// returned alongside the converted paragraphs as `writeupOriginal`, because the
+/// conversion cannot represent an `upload` node -- an image or clip dropped into
+/// the prose from the Payload admin. When the operator has not touched the
+/// write-up, save sends the original back verbatim so those blocks survive.
+#[tauri::command]
+pub async fn cms_project_fields(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .get(api(&cfg, &format!("/projects/{}?depth=2", urlencode(&id))))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("could not read the project: {}", res.status()));
+    }
+    let doc: Value = res.json().await.map_err(|e| e.to_string())?;
+    let (paragraphs, dropped) = crate::richtext::slate_to_paragraphs(&doc["writeup"]);
+
+    // At depth 2 a service is the populated category document.
+    let services: Vec<String> = doc["services"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| {
+                    if v.is_object() {
+                        v["label"].as_str().map(|s| s.to_string())
+                    } else {
+                        v.as_str().map(|s| s.to_string())
+                    }
+                })
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let key_image = doc["image"]["url"].as_str().unwrap_or_default();
+    let key_image_url = if key_image.is_empty() {
+        String::new()
+    } else if key_image.starts_with("http") {
+        key_image.to_string()
+    } else {
+        format!("{}{key_image}", cfg.payload.url.trim_end_matches('/'))
+    };
+
+    let fields = json!({
+        "title": doc["title"].as_str().unwrap_or_default(),
+        "slug": doc["slug"].as_str().unwrap_or_default(),
+        "year": doc["year"].as_str().unwrap_or_default(),
+        "tour": doc["tour"].as_str().unwrap_or_default(),
+        "collaborator": doc["collaborator"].as_str().unwrap_or_default(),
+        "summary": doc["summary"].as_str().unwrap_or_default(),
+        "capabilities": doc["capabilities"].as_array().cloned().unwrap_or_default(),
+        "services": services,
+        "stats": doc["stats"].as_array().cloned().unwrap_or_default(),
+        "credits": doc["credits"].as_array().cloned().unwrap_or_default(),
+        "writeup": { "lead": "", "body": paragraphs },
+        "writeupColumns": if doc["writeupColumns"].as_str() == Some("2") { "2" } else { "1" },
+        "status": doc["status"].as_str().unwrap_or("published"),
+        "featured": doc["featured"].as_bool().unwrap_or(false),
+        "featuredOrder": doc["featuredOrder"].as_u64(),
+    });
+
+    Ok(json!({
+        "id": doc["id"].as_str().unwrap_or(id.as_str()),
+        "fields": fields,
+        "writeupOriginal": doc["writeup"].as_array().cloned().unwrap_or_default(),
+        "writeupDropped": dropped,
+        "order": doc["order"].as_f64(),
+        "code": doc["code"].as_str().unwrap_or_default(),
+        "keyImage": doc["image"]["id"].as_str().unwrap_or_default(),
+        "keyImageUrl": key_image_url,
+        "url": format!("{}/work/{}", cfg.payload.url.trim_end_matches('/'), doc["slug"].as_str().unwrap_or_default()),
+    }))
+}
+
+/// Fields this command is willing to write. Anything else is ignored rather than
+/// passed through, so a stray key in the form state cannot reach the CMS.
+const EDITABLE_FIELDS: &[&str] = &[
+    "title", "slug", "year", "tour", "collaborator", "summary",
+    "capabilities", "services", "stats", "credits",
+    "writeup", "writeupColumns", "status", "featured", "featuredOrder",
+];
+
+/// Writes back ONLY the keys named in `changed`.
+///
+/// A partial update, the same shape save_cms_gallery uses and for the same
+/// reason: leaving `data.title` unset makes the collection's beforeChange hook
+/// return early, so the generated code is left alone. Sending the whole document
+/// would also mean sending fields this form never loaded, which is how
+/// re-publishing used to wipe things.
+///
+/// `writeup_slate`, when given, is sent verbatim instead of converting the
+/// paragraph list -- the untouched-write-up path that preserves inline media.
+#[tauri::command]
+pub async fn save_cms_fields(
+    state: State<'_, AppState>,
+    id: String,
+    fields: Value,
+    changed: Vec<String>,
+    writeup_slate: Option<Value>,
+) -> Result<Value, String> {
+    let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    let keys: Vec<String> = changed
+        .into_iter()
+        .filter(|k| EDITABLE_FIELDS.contains(&k.as_str()))
+        .collect();
+    if keys.is_empty() {
+        return Ok(json!({ "id": id, "written": Vec::<String>::new() }));
+    }
+
+    let client = reqwest::Client::builder()
+        // The write blocks on a whole Astro build, so this is a build timeout
+        // rather than a request timeout.
+        .timeout(std::time::Duration::from_secs(900))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let jwt = login(&client, &cfg).await.map_err(|e| e.to_string())?;
+
+    let mut doc = json!({});
+    for k in &keys {
+        match k.as_str() {
+            "writeup" => {
+                if let Some(slate) = writeup_slate.as_ref().filter(|v| v.is_array()) {
+                    doc["writeup"] = slate.clone();
+                } else {
+                    let mut paragraphs: Vec<String> = Vec::new();
+                    if let Some(lead) = fields["writeup"]["lead"].as_str() {
+                        if !lead.trim().is_empty() {
+                            paragraphs.push(lead.trim().to_string());
+                        }
+                    }
+                    if let Some(body) = fields["writeup"]["body"].as_array() {
+                        for p in body {
+                            if let Some(t) = p.as_str() {
+                                if !t.trim().is_empty() {
+                                    paragraphs.push(t.trim().to_string());
+                                }
+                            }
+                        }
+                    }
+                    doc["writeup"] = json!(crate::richtext::paragraphs_to_slate(&paragraphs));
+                }
+            }
+            "services" => {
+                let (ids, _unknown) = resolve_services(&cfg, &fields["services"]).await;
+                doc["services"] = json!(ids);
+            }
+            "stats" => {
+                let kept: Vec<Value> = fields["stats"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter(|s| {
+                                !s["label"].as_str().unwrap_or_default().is_empty()
+                                    && !s["value"].as_str().unwrap_or_default().is_empty()
+                            })
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                doc["stats"] = json!(kept);
+            }
+            "credits" => {
+                let kept: Vec<Value> = fields["credits"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter(|c| c["entries"].as_array().map(|e| !e.is_empty()).unwrap_or(false))
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                doc["credits"] = json!(kept);
+            }
+            "featuredOrder" => {
+                doc["featuredOrder"] = match fields["featuredOrder"].as_u64() {
+                    Some(n) => json!(n),
+                    None => Value::Null,
+                };
+            }
+            other => {
+                doc[other] = fields[other].clone();
+            }
+        }
+    }
+
+    let res = client
+        .patch(api(&cfg, &format!("/projects/{}", urlencode(&id))))
+        .header("Authorization", format!("JWT {jwt}"))
+        .json(&doc)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = res.status();
+    let text = res.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("field write failed: {status} {text}"));
+    }
+    let saved: Value = serde_json::from_str(&text).unwrap_or(json!({}));
+    Ok(json!({ "id": id, "written": keys, "doc": saved["doc"].clone() }))
+}
