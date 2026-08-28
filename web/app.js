@@ -3894,6 +3894,49 @@ function planReorder(items, desiredIds) {
   return planOrders(desiredIds.map((id) => by.get(id)).filter(Boolean));
 }
 
+/**
+ * The marquee run: which projects are featured, and in what order.
+ *
+ * `featuredOrder` is DERIVED from the running order rather than dragged
+ * separately -- the featured projects, numbered 1..n in the sequence they
+ * already sit in on this screen. Two orders to drag for one screen would be a
+ * second mental model for no gain, and the site reads featuredOrder only to sort
+ * the featured set, which this satisfies exactly.
+ *
+ * Returns one entry per project that needs writing, so a project already correct
+ * costs nothing -- which matters more here than usual, because every write blocks
+ * on a full site build.
+ */
+function planFeatured(items, desiredIds, featuredIds) {
+  const by = new Map(items.map((p) => [p.id, p]));
+  const seq = desiredIds.map((id) => by.get(id)).filter(Boolean);
+  const out = [];
+  let n = 0;
+  for (const p of seq) {
+    const want = featuredIds.has(p.id);
+    const wantOrder = want ? ++n : null;
+    const isNow = Boolean(p.featured);
+    const orderNow = typeof p.featuredOrder === 'number' ? p.featuredOrder : null;
+    if (want === isNow && wantOrder === orderNow) continue;
+    // Unfeaturing clears the number too: a stale featuredOrder left behind would
+    // decide the run the next time the box was ticked.
+    out.push({ id: p.id, featured: want, featuredOrder: wantOrder });
+  }
+  return out;
+}
+
+/** Order changes and marquee changes merged, one entry per document. */
+function planWorkChanges(items, desiredIds, featuredIds) {
+  const merged = new Map();
+  for (const c of planReorder(items, desiredIds)) merged.set(c.id, { ...c });
+  for (const c of planFeatured(items, desiredIds, featuredIds)) {
+    merged.set(c.id, { ...(merged.get(c.id) || { id: c.id }), ...c });
+  }
+  // Written in screen order so the progress report reads top to bottom.
+  const pos = new Map(desiredIds.map((id, i) => [id, i]));
+  return [...merged.values()].sort((a, b) => (pos.get(a.id) ?? 0) - (pos.get(b.id) ?? 0));
+}
+
 // ------------------------------------------------------------ dragging
 //
 // Reordering runs on pointer events rather than HTML5 drag and drop, and the
@@ -4991,7 +5034,15 @@ const rootThumb = (projectId, rel, mtime) => {
   return workThumbs.get(key);
 };
 
-const workState = (items) => ({ items, ids: items.map((p) => p.id), saving: null, touched: false });
+const workState = (items) => ({
+  items,
+  ids: items.map((p) => p.id),
+  // The marquee run as a set of ids, seeded from what the CMS holds. Kept beside
+  // the order rather than mutating `items`, so REVERT is just dropping this.
+  featuredIds: new Set(items.filter((p) => p.featured).map((p) => p.id)),
+  saving: null,
+  touched: false,
+});
 
 function closeWorkOrder() {
   workThumbs.clear();
@@ -5016,7 +5067,7 @@ async function openWorkOrder() {
 
 async function saveWorkOrder() {
   const w = state.workOrder;
-  const changes = planReorder(w.items, w.ids);
+  const changes = planWorkChanges(w.items, w.ids, w.featuredIds);
   if (!changes.length) return;
   w.saving = { done: 0, total: changes.length, title: '' };
   render();
@@ -5041,7 +5092,17 @@ async function saveWorkOrder() {
   }
 }
 
-function workTile(p, position, dirty) {
+/** Toggle a project in or out of the homepage marquee. */
+function toggleFeatured(id) {
+  const w = state.workOrder;
+  if (!w || w.saving) return;
+  if (w.featuredIds.has(id)) w.featuredIds.delete(id);
+  else w.featuredIds.add(id);
+  w.touched = true;
+  render();
+}
+
+function workTile(p, position, dirty, featured, marqueePos) {
   return h(
     'div.wtile',
     {
@@ -5057,7 +5118,32 @@ function workTile(p, position, dirty) {
       {},
       p.image
         ? workThumb(p.image)
-        : h('span.m.dimmer', { style: { fontSize: '8.5px', letterSpacing: '0.18em' } }, 'NO KEY IMAGE')
+        : h('span.m.dimmer', { style: { fontSize: '8.5px', letterSpacing: '0.18em' } }, 'NO KEY IMAGE'),
+      // Inside the still, not beside it: .wtile__img is the relative box, so
+      // anchoring to the bottom here means the bottom of the PICTURE rather than
+      // the bottom of the tile, where the name and meta live.
+      //
+      // `pointerdown` is stopped, not just `click`: the tile starts a drag on
+      // pointerdown, so without this every tick would also pick the tile up and
+      // reflow the grid under the cursor.
+      h(
+        'button.wtile__star.m',
+        {
+          'data-on': featured ? '1' : '0',
+          title: featured
+            ? `On the homepage marquee at position ${marqueePos}. Click to take it off.`
+            : 'Not on the homepage marquee. Click to add it.',
+          onPointerdown: (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          },
+          onClick: (e) => {
+            e.stopPropagation();
+            toggleFeatured(p.id);
+          },
+        },
+        featured ? `\u2605 ${pad2(marqueePos)}` : '\u2606'
+      )
     ),
     h('span.wtile__pos.m', {}, pad2(position)),
     dirty ? h('span.wtile__moved.m', {}, 'REWRITE') : null,
@@ -5065,7 +5151,7 @@ function workTile(p, position, dirty) {
     h(
       'span.wtile__meta.m.dimmer',
       {},
-      [p.year, p.code, p.featured ? 'FEATURED' : null].filter(Boolean).join(' · ') || '—'
+      [p.year, p.code, featured ? 'FEATURED' : null].filter(Boolean).join(' \u00b7 ') || '\u2014'
     )
   );
 }
@@ -5084,7 +5170,7 @@ function workOrderPanel() {
     );
   }
 
-  const changes = planReorder(w.items, w.ids);
+  const changes = planWorkChanges(w.items, w.ids, w.featuredIds);
   const dirty = new Set(changes.map((c) => c.id));
   const by = new Map(w.items.map((p) => [p.id, p]));
   const run = w.ids.map((id) => by.get(id)).filter(Boolean);
@@ -5112,10 +5198,23 @@ function workOrderPanel() {
       h(
         'p.m.dimmer',
         { style: { margin: 0, fontSize: '10px', lineHeight: 1.75, letterSpacing: '0.06em', maxWidth: '760px' } },
-        'This is the grid in the order the site builds it, top left first. Drag a project anywhere in the run — the order set here decides the page, and the year is only used to settle a tie, so a 2022 job can sit above a 2026 one if that is the story you want to tell. Click a project to open its own gallery and rearrange the images inside it.'
+        'This is the grid in the order the site builds it, top left first. Drag a project anywhere in the run — the order set here decides the page, and the year is only used to settle a tie, so a 2022 job can sit above a 2026 one if that is the story you want to tell. Click a project to open its own gallery and rearrange the images inside it. The star on a still puts it on the HOMEPAGE MARQUEE; the number beside it is its place in that run, taken from the order below, so dragging a project moves it in both.'
       ),
       run.length
-        ? h('div.wgrid', {}, run.map((p, i) => workTile(p, i + 1, dirty.has(p.id))))
+        ? h(
+            'div.wgrid',
+            {},
+            (() => {
+              // Marquee position is derived from the run, so it renumbers itself
+              // as tiles are dragged or ticked -- see planFeatured.
+              let m = 0;
+              return run.map((p, i) => {
+                const featured = w.featuredIds.has(p.id);
+                if (featured) m++;
+                return workTile(p, i + 1, dirty.has(p.id), featured, m);
+              });
+            })()
+          )
         : h('div.empty', {}, 'No published projects in the CMS'),
       h('div', { style: { minHeight: '20px' } })
     ),
@@ -5129,6 +5228,7 @@ function workOrderPanel() {
         [
           ['PROJECTS', String(w.items.length)],
           ['TO REWRITE', String(n)],
+          ['ON MARQUEE', String(state.workOrder?.featuredIds?.size ?? 0)],
         ].map(([k, v]) =>
           h(
             'div',
@@ -5186,7 +5286,7 @@ function workOrderPanel() {
           title: signedIn ? '' : 'Signing in is what lets the app write to the CMS',
           onClick: saveWorkOrder,
         },
-        busy ? `SAVING ${w.saving.done}/${w.saving.total}` : n ? `SAVE ORDER · ${n}` : 'SAVE ORDER'
+        busy ? `SAVING ${w.saving.done}/${w.saving.total}` : n ? `SAVE \u00b7 ${n}` : 'SAVE'
       )
     )
   );

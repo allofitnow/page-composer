@@ -719,6 +719,9 @@ pub struct WorkProject {
     pub year: String,
     pub order: Option<f64>,
     pub featured: bool,
+    /// Needed to diff: without it the screen cannot tell an already-correct
+    /// marquee position from one that has never been written.
+    pub featured_order: Option<f64>,
     /// Absolute url of the key image, or empty when the project has none.
     pub image: String,
 }
@@ -750,6 +753,7 @@ fn work_project_from(cfg: &Config, doc: &Value) -> Option<WorkProject> {
         year: doc["year"].as_str().unwrap_or_default().to_string(),
         order: doc["order"].as_f64(),
         featured: doc["featured"].as_bool().unwrap_or(false),
+        featured_order: doc["featuredOrder"].as_f64(),
         image: if image.is_empty() {
             String::new()
         } else if image.starts_with("http") {
@@ -788,9 +792,20 @@ pub async fn list_work_order(state: State<'_, AppState>) -> Result<Vec<WorkProje
 }
 
 #[derive(serde::Deserialize)]
+// The screen sends `featuredOrder`; without this it would never reach
+// `featured_order` and the marquee position would silently stay unwritten.
+#[serde(rename_all = "camelCase")]
 pub struct OrderChange {
     pub id: String,
-    pub order: f64,
+    /// All three are optional because one screen writes two decisions: a
+    /// project may have moved, or been added to the marquee, or both. Only
+    /// the keys present are sent, which keeps this a partial update.
+    #[serde(default)]
+    pub order: Option<f64>,
+    #[serde(default)]
+    pub featured: Option<bool>,
+    #[serde(default)]
+    pub featured_order: Option<f64>,
 }
 
 /// Writes the planned `order` values, one document at a time, and reports each
@@ -833,10 +848,31 @@ pub async fn save_work_order(
     for (i, change) in changes.iter().enumerate() {
         let title = titles.get(&change.id).cloned().unwrap_or_else(|| change.id.clone());
         emit_reorder(&app, i, total, &title);
+        let mut body = json!({});
+        if let Some(o) = change.order {
+            body["order"] = json!(o);
+        }
+        if let Some(f) = change.featured {
+            body["featured"] = json!(f);
+        }
+        // Null is meaningful here: unfeaturing CLEARS the number, or a stale one
+        // would decide the run the next time the box was ticked.
+        if change.featured.is_some() {
+            body["featuredOrder"] = match change.featured_order {
+                Some(n) => json!(n),
+                None => Value::Null,
+            };
+        }
+        if body.as_object().map(|o| o.is_empty()).unwrap_or(true) {
+            continue;
+        }
         let res = client
             .patch(api(&cfg, &format!("/projects/{}", change.id)))
             .header("Authorization", format!("JWT {jwt}"))
-            .json(&json!({ "order": change.order }))
+            // One patch per document, never two: every write blocks on a full
+            // site build, so a project whose position AND featured state changed
+            // would otherwise cost two builds to save one decision.
+            .json(&body)
             .send()
             .await
             .map_err(|e| format!("{title}: {e}"))?;

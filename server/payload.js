@@ -395,6 +395,9 @@ export async function listWorkOrder() {
       year: d.year || '',
       order: typeof d.order === 'number' ? d.order : null,
       featured: Boolean(d.featured),
+      // Needed to diff: without it the screen cannot tell an already-correct
+      // marquee position from one that has never been written.
+      featuredOrder: typeof d.featuredOrder === 'number' ? d.featuredOrder : null,
       image: imageUrl(d.image),
     }))
     .sort((a, b) => {
@@ -419,13 +422,27 @@ export async function saveWorkOrder(changes, onProgress = () => {}) {
   const titles = new Map((await listWorkOrder()).map((p) => [p.id, p.title]));
   const total = changes.length;
   for (let i = 0; i < total; i++) {
-    const { id, order } = changes[i];
+    const { id, order, featured, featuredOrder } = changes[i];
     const title = titles.get(id) || id;
     onProgress({ done: i, total, title });
+    // `order` and the marquee fields ride in ONE patch per document, never two.
+    // Every write blocks on a full site build, so a project whose position and
+    // featured state both changed would otherwise cost two builds to save one
+    // decision. Only the keys actually present are sent, which keeps this a
+    // partial update: `data.title` stays unset, so the collection's beforeChange
+    // hook returns early and the generated code is left alone.
+    const body = {};
+    if (order !== undefined) body.order = order;
+    if (featured !== undefined) body.featured = featured;
+    if (featuredOrder !== undefined) body.featuredOrder = featuredOrder;
+    if (!Object.keys(body).length) {
+      onProgress({ done: i + 1, total, title });
+      continue;
+    }
     const res = await fetch(api(`/projects/${id}`), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `JWT ${jwt}` },
-      body: JSON.stringify({ order }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`${title}: ${res.status} ${await res.text()}`);
     onProgress({ done: i + 1, total, title });

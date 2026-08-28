@@ -883,6 +883,25 @@ textarea.field { resize: vertical; line-height: 1.6; }
   font-size: 8px; letter-spacing: 0.18em;
   padding: 3px 5px 2px;
 }
+/* The marquee toggle. Bottom right of the still: the position badge holds the
+   top left and REWRITE the top right, and it has to sit ON the image so the
+   run reads as a set of pictures rather than a form. */
+.wtile__star {
+  position: absolute; bottom: 8px; right: 13px;
+  background: rgba(0, 0, 0, 0.62); color: var(--cw45);
+  border: 1px solid var(--cw45);
+  font-size: 9px; letter-spacing: 0.14em;
+  padding: 3px 6px 2px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  transition: color 120ms, border-color 120ms, background-color 120ms;
+}
+.wtile__star:hover { color: var(--cw); border-color: var(--cw); }
+/* On the marquee: filled, and carrying its position in the run. */
+.wtile__star[data-on="1"] {
+  background: var(--cw); color: #000; border-color: var(--cw);
+}
+
 .wtile__name {
   font-weight: 500; font-size: 14px; letter-spacing: 0.02em; line-height: 1.2;
 }
