@@ -1,9 +1,9 @@
 {
   "name": "page-composer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
-  "description": "AOIN project page composer — bridges asset folders + copy docs into a Payload-ready portfolio page.",
+  "description": "AOIN project page composer \u2014 bridges asset folders + copy docs into a Payload-ready portfolio page.",
   "scripts": {
     "start": "node server/index.js",
     "tauri": "tauri",
