@@ -41,7 +41,11 @@ jobs:
         shell: bash
         env:
           KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          PW: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          # Fingerprints only, never the values: enough to tell whether the
+          # secret is the same key as the one on the release machine.
+          echo "::notice::signing key fingerprint $(printf '%s' "$KEY" | sha256sum | cut -c1-16) · password length ${#PW}"
           if [ -z "$KEY" ]; then
             echo "::error::The repository secret TAURI_SIGNING_PRIVATE_KEY is not set. Add it under Settings → Secrets and variables → Actions, with the contents of ~/.tauri/page-composer.key, plus TAURI_SIGNING_PRIVATE_KEY_PASSWORD (empty)."
             exit 1
