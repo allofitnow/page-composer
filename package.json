@@ -1,6 +1,6 @@
 {
   "name": "page-composer",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": true,
   "type": "module",
   "description": "AOIN project page composer — bridges asset folders + copy docs into a Payload-ready portfolio page.",
