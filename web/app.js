@@ -2,7 +2,7 @@
 // One state object, one render pass per change. Text inputs commit on `change`
 // (blur/enter) rather than `input`, so re-rendering never eats a keystroke.
 
-import { rpc, thumbImg, cmsThumbImg, mediaSrc, previewSrc, probeMedia, onComposeProgress, onPublishProgress, onReorderProgress, notify, pickFolder, openExternal, isTauri } from '/transport.js';
+import { rpc, thumbImg, cmsThumbImg, mediaSrc, previewSrc, probeMedia, onComposeProgress, onPublishProgress, onReorderProgress, onUpdateProgress, notify, pickFolder, openExternal, isTauri } from '/transport.js';
 import { createTimeline, spanSeconds, frameOf, timecode } from '/timeline.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -308,6 +308,8 @@ const state = {
   cmsGalleryFor: null,
   cmsGallery: null, // { project, rows, was, saving }
   site: null, // { phase: 'running' | 'live' | 'failed', since, seconds, log, error, at }
+  appVersion: '', // the desktop build's own version; '' in the browser
+  update: null, // { version, notes, phase: 'available' | 'installing' | 'restarting', downloaded, total, error }
   serviceFilter: '',
   login: null, // { email, password, remember, busy, error } while the sign-in modal is open
   loading: null, // { label, detail, since } while a slow backend call is in flight
@@ -462,6 +464,7 @@ function topBar() {
           h('span', {}, signedIn ? 'SIGNED IN' : 'SIGN IN')
         );
       })(),
+      updateChip(),
       h(
         'button.step',
         { title: 'Asset roots and CMS target', 'aria-current': String(state.settingsOpen), disabled: held, onClick: openSettings },
@@ -746,6 +749,100 @@ function loginModal() {
 }
 
 // ----------------------------------------------------------------- settings
+// ------------------------------------------------------------------ updates
+//
+// The desktop build asks the CMS host it is pointed at for a newer signed
+// build, once at launch and on demand from the settings. A found update is a
+// chip in the top bar; one click downloads, installs and relaunches.
+
+async function checkForUpdate({ quiet = false } = {}) {
+  if (!isTauri) return;
+  try {
+    const found = await rpc.checkUpdate();
+    if (found) {
+      state.update = { ...found, phase: 'available' };
+      if (!quiet) toast(`Version ${found.version} is available`);
+    } else {
+      state.update = null;
+      if (!quiet) toast(`Up to date — ${state.appVersion || 'this'} is the latest`);
+    }
+  } catch (err) {
+    // At launch a host that is off or has no releases yet is not news.
+    if (!quiet) toast(`Could not check for updates: ${err.message}`, 'error');
+  }
+  render();
+}
+
+async function installUpdate() {
+  const u = state.update;
+  if (!u || u.phase !== 'available') return;
+  u.phase = 'installing';
+  render();
+  const off = onUpdateProgress((p) => {
+    if (!state.update) return;
+    if (p.done) state.update.phase = 'restarting';
+    else Object.assign(state.update, { downloaded: p.downloaded, total: p.total });
+    const chip = document.getElementById('update-chip');
+    if (chip) chip.textContent = updateChipLabel();
+  });
+  try {
+    await rpc.installUpdate(); // relaunches on success; never returns
+  } catch (err) {
+    off();
+    state.update = { ...u, phase: 'available', error: err.message };
+    toast(`Update failed: ${err.message}`, 'error');
+    render();
+  }
+}
+
+function updateChipLabel() {
+  const u = state.update;
+  if (!u) return '';
+  if (u.phase === 'restarting') return 'RESTARTING…';
+  if (u.phase === 'installing') return u.total ? `UPDATING ${Math.round((100 * (u.downloaded || 0)) / u.total)}%` : 'UPDATING…';
+  return `UPDATE ${u.version} — INSTALL`;
+}
+
+/** The top-bar chip; nothing at all when there is nothing to install. */
+function updateChip() {
+  const u = state.update;
+  if (!u) return null;
+  return h(
+    'button.step',
+    {
+      id: 'update-chip',
+      'aria-current': 'true',
+      disabled: u.phase !== 'available',
+      title: u.notes ? `${u.version}: ${u.notes}` : `Version ${u.version} — downloads, installs and restarts`,
+      onClick: installUpdate,
+    },
+    updateChipLabel()
+  );
+}
+
+/** The settings block: this build's version and a check on demand. */
+function versionBlock() {
+  if (!isTauri) return null;
+  const u = state.update;
+  return h(
+    'div',
+    { style: { display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: '20px', borderTop: '1px solid var(--rule)', maxWidth: '520px' } },
+    h('span.ov', {}, 'This app'),
+    h(
+      'div',
+      { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
+      h('span.m', { style: { fontSize: '10px', letterSpacing: '0.16em' } }, `VERSION ${state.appVersion || '?'}`),
+      u ? h('button.chip', { 'aria-pressed': 'true', disabled: u.phase !== 'available', onClick: installUpdate }, updateChipLabel()) : null,
+      h('button.chip', { onClick: () => checkForUpdate() }, 'CHECK FOR UPDATES')
+    ),
+    h(
+      'span.m.dimmer',
+      { style: { fontSize: '8.5px', letterSpacing: '0.14em', lineHeight: 1.7 } },
+      'UPDATES ARE SIGNED BUILDS PUBLISHED TO THE CMS HOST ABOVE. THE APP CHECKS ONCE AT LAUNCH; INSTALLING RESTARTS IT.'
+    )
+  );
+}
+
 // ------------------------------------------------------------------ site publish
 //
 // Writing to the CMS no longer builds anything: since 2026-09-07 the only
@@ -992,6 +1089,7 @@ function settingsPanel() {
           ? h('button.chip', { style: { alignSelf: 'flex-start' }, onClick: () => { state.settings.publishTokenNew = ''; saveSettings(); } }, 'FORGET THE TOKEN')
           : null
       ),
+      versionBlock(),
       h('div.grow'),
       h(
         'div',
@@ -5880,4 +5978,9 @@ function render() {
     toast(err.message, 'error');
   }
   render();
+  if (isTauri) {
+    rpc.appVersion().then((v) => { state.appVersion = v; }).catch(() => {});
+    // After the scan, not before: a launch should not wait on the CMS host.
+    checkForUpdate({ quiet: true });
+  }
 })();

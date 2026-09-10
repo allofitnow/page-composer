@@ -66,6 +66,9 @@ export const rpc = isTauri
       payloadLogin: ({ email, password, remember }) => invoke('payload_login', { email, password, remember }),
       payloadLogout: () => invoke('payload_logout'),
       publishSite: () => invoke('publish_site'),
+      checkUpdate: () => invoke('check_update'),
+      installUpdate: () => invoke('install_update'),
+      appVersion: () => T.app.getVersion(),
     }
   : {
       status: () => http('/api/status'),
@@ -94,6 +97,10 @@ export const rpc = isTauri
       payloadLogin: ({ email, password, remember }) => httpPost('/api/payload/login', { email, password, remember }),
       payloadLogout: () => httpPost('/api/payload/logout', {}),
       publishSite: () => httpPost('/api/site/publish', {}),
+      // The web version is whatever is on disk: pull the branch, reload.
+      checkUpdate: async () => null,
+      installUpdate: async () => {},
+      appVersion: async () => '',
     };
 
 /**
@@ -240,6 +247,12 @@ export async function previewSrc(projectId, rel) {
  * HTTP backend still only reports at the end, so there the UI falls back to the
  * elapsed clock alone. Returns an unsubscribe function either way.
  */
+export function onUpdateProgress(handler) {
+  if (!isTauri) return () => {};
+  const unlisten = T.event.listen('update://progress', (e) => handler(e.payload));
+  return () => unlisten.then((f) => f()).catch(() => {});
+}
+
 export function onPublishProgress(handler) {
   if (!isTauri) return () => {};
   const unlisten = T.event.listen('publish://progress', (e) => handler(e.payload));

@@ -12,6 +12,7 @@ mod media;
 mod payload;
 mod scan;
 mod site;
+mod update;
 mod util;
 
 use config::{Config, Root, RootStatus};
@@ -181,6 +182,8 @@ pub fn run() {
         // it finish -- they switch away and come back to guess whether it
         // worked. The toast only exists while the window is in front.
         .plugin(tauri_plugin_notification::init())
+        // Updates come from the CMS host, not GitHub: the repo is private.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -206,6 +209,7 @@ pub fn run() {
                 config_path,
                 cache_dir,
             });
+            app.manage(update::PendingUpdate(Mutex::new(None)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -240,6 +244,8 @@ pub fn run() {
             payload::payload_login,
             payload::payload_logout,
             site::publish_site,
+            update::check_update,
+            update::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running AOIN page composer");
