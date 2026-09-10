@@ -171,6 +171,25 @@ function normaliseGallery(gallery) {
 }
 
 /** Every tile in reading order, with the row and slot it belongs to. */
+/**
+ * A carousel tile's identity. A clip can be in the carousel more than once,
+ * each time as its own CUT with its own trim; the file path alone stops being
+ * enough then. The first placement keeps the bare path as its key so nothing
+ * already saved changes meaning; extra cuts get `path#cN`. Trims are keyed on
+ * this, never on the path.
+ */
+const keyOf = (it) => (it.cut ? `${it.rel}#${it.cut}` : it.rel);
+const cutOf = (key) => (key.includes('#') ? key.slice(key.indexOf('#') + 1) : '');
+const relOfKey = (key) => (key.includes('#') ? key.slice(0, key.indexOf('#')) : key);
+
+/** How a cut reads in the UI: '' for the first placement, 'CUT 2' for the next. */
+function cutLabel(rel, key) {
+  if (!cutOf(key)) return '';
+  const cuts = flatTiles(state.gallery).filter((t) => t.rel === rel).map(keyOf);
+  const i = cuts.indexOf(key);
+  return i >= 0 ? `CUT ${i + 1}` : 'CUT';
+}
+
 function flatTiles(rows) {
   const out = [];
   rows.forEach((r, ri) => r.items.forEach((it, si) => out.push({ ...it, row: ri, slot: si, layout: layoutOf(r) })));
@@ -224,7 +243,7 @@ function selectedItems(state) {
       slot: t.slot,
       // Stills ignore it, but sending a trim for one would put a seek in front
       // of an image conversion and read as a bug in the manifest.
-      trim: kindOf(t.rel) === 'video' ? state.trims[t.rel] : undefined,
+      trim: kindOf(t.rel) === 'video' ? state.trims[keyOf(t)] : undefined,
     })
   );
   return out;
@@ -366,21 +385,27 @@ const IC = {
  * cache (and so a stale cached response for an old URL can never stick). On the
  * Tauri build the file is generated on demand and the src fills in after.
  */
-const thumb = (rel, w = 420, attrs = {}) => {
+const thumb = (rel, w = 420, attrs = {}, key = rel) => {
   const mt = state.project.assets.find((a) => a.rel === rel)?.mtime || 0;
   // A trimmed clip's poster is its IN point: the tile then shows the frame
   // the encode will start on, which is the only proof a trim took that does
   // not mean opening the clip again.
-  const at = state.trims[rel]?.in;
+  const at = state.trims[key]?.in;
   return thumbImg(state.project.id, rel, w, { ...attrs, 'data-mtime': Math.round(mt), 'data-at': at > 0 ? at.toFixed(3) : undefined });
 };
 
-/** 'IN → OUT · kept' for a trimmed clip, or '' when the whole clip goes out. */
-function trimLabel(rel) {
-  const t = state.trims[rel];
+/**
+ * 'IN → OUT · kept' for a trim, or '' when the whole clip goes out. Takes the
+ * trim itself rather than looking one up, because an export row carries its
+ * own — the very object the plan sent, or the desktop backend's echo of it,
+ * which knows seconds (`start`) but not frames.
+ */
+function trimText(t) {
   if (!t) return '';
-  const kept = `${(t.out - t.in).toFixed(2)}S`;
-  if (t.inFrame === undefined || !t.fps) return `${t.in.toFixed(2)}S → ${t.out.toFixed(2)}S · ${kept}`;
+  const start = Number(t.in ?? t.start ?? 0);
+  const end = t.out == null ? null : Number(t.out);
+  const kept = end == null ? 'TO THE END' : `${(end - start).toFixed(2)}S`;
+  if (t.inFrame === undefined || !t.fps) return `${start.toFixed(2)}S → ${end == null ? 'END' : `${end.toFixed(2)}S`} · ${kept}`;
   return `${timecode(t.inFrame, t.fps)} → ${timecode(t.outFrame, t.fps)} · ${kept}`;
 }
 
@@ -1449,7 +1474,7 @@ async function openProject(id) {
       .map((r) => ({ ...r, layout: r.items.length === slotsFor(r.layout) ? r.layout : (layoutsForCount(r.items.length)[0] || DEFAULT_LAYOUT) })),
     // Trims for assets that are no longer in the project would linger in
     // storage forever and badge nothing; drop them on the way back in.
-    trims: Object.fromEntries(Object.entries(saved.trims || {}).filter(([rel]) => known.has(rel))),
+    trims: Object.fromEntries(Object.entries(saved.trims || {}).filter(([key]) => known.has(relOfKey(key)))),
     base: saved.base || project.slug,
     baseTouched: Boolean(saved.base),
     outDir: saved.outDir || '',
@@ -1515,9 +1540,9 @@ function visibleAssets() {
 let hoverRel = null;
 let peek = null; // { rel, node, stage, bar } while the overlay is up
 
-function openPeek(rel) {
+function openPeek(rel, key = rel) {
   if (!rel || !state.project) return;
-  if (peek) return showPeek(rel);
+  if (peek) return showPeek(rel, key);
   const stage = h('div.peek__stage');
   const trim = h('div.peek__trim');
   const bar = h('div.peek__bar');
@@ -1535,8 +1560,8 @@ function openPeek(rel) {
     bar
   );
   document.body.append(node);
-  peek = { rel: null, node, stage, trim, bar, head: null, video: null, blob: null, info: null, timeline: null };
-  showPeek(rel);
+  peek = { rel: null, key: null, node, stage, trim, bar, head: null, video: null, blob: null, info: null, timeline: null };
+  showPeek(rel, key);
 }
 
 /** A blob URL is held by the process until it is revoked; the proxy is a few
@@ -1559,7 +1584,7 @@ function closePeek() {
   peek = null;
 }
 
-async function showPeek(rel) {
+async function showPeek(rel, key = rel) {
   if (!peek) return;
   const asset = state.project.assets.find((a) => a.rel === rel);
   if (!asset) return;
@@ -1568,6 +1593,9 @@ async function showPeek(rel) {
   peek.timeline = null;
   peek.info = null;
   peek.rel = rel;
+  // Which cut of the clip the trim marks belong to. Opened from the contact
+  // sheet it is the first placement; from a rail cell, that cell's own cut.
+  peek.key = key;
   peek.head = null;
   peek.video = null;
   peek.stage.replaceChildren(h('div.peek__wait.m', {}, 'LOADING…'));
@@ -1681,7 +1709,7 @@ function mountVideo(rel, src, isProxy) {
   video.addEventListener('loadedmetadata', () => {
     if (peek?.rel !== rel) return;
     if (peek.info) buildTimeline(rel);
-    const t = trimOf(rel);
+    const t = trimOf(peek.key);
     if (t?.inFrame !== undefined && peek.info) peek.timeline?.goTo(t.inFrame);
   }, { once: true });
 }
@@ -1726,9 +1754,9 @@ function buildTimeline(rel) {
 
   // A trim stored before the timeline existed only has seconds. Recover the
   // frames from them now that the rate is known, rather than dropping it.
-  const stored = trimOf(rel);
+  const stored = trimOf(peek.key);
   if (stored && stored.inFrame === undefined) {
-    setTrim(rel, { inFrame: frameOf(stored.in, fps), outFrame: Math.max(0, frameOf(stored.out, fps) - 1) }, fps);
+    setTrim(peek.key, { inFrame: frameOf(stored.in, fps), outFrame: Math.max(0, frameOf(stored.out, fps) - 1) }, fps);
   }
 
   peek.timeline?.destroy();
@@ -1737,10 +1765,10 @@ function buildTimeline(rel) {
     video: peek.video,
     info: peek.info,
     getTrim: () => {
-      const t = trimOf(rel);
+      const t = trimOf(peek.key);
       return t && t.inFrame !== undefined ? { inFrame: t.inFrame, outFrame: t.outFrame } : null;
     },
-    onTrim: (next) => setTrim(rel, next, fps),
+    onTrim: (next) => setTrim(peek.key, next, fps),
     onFrame: () => {},
   });
 
@@ -1756,7 +1784,7 @@ function buildTimeline(rel) {
     // changed meant scrubbing past the out point snapped straight back to the
     // in point, which makes it impossible to look at the rest of the clip in
     // order to decide where the marks should go.
-    const t = trimOf(rel);
+    const t = trimOf(peek.key);
     if (t && t.inFrame !== undefined && f > t.outFrame && !peek.video?.paused) peek.timeline?.goTo(t.inFrame);
     peek.video?.requestVideoFrameCallback?.(onFrameShown);
   };
@@ -1776,6 +1804,25 @@ function stepPeek(delta) {
   if (!list.length) return;
   const i = list.findIndex((a) => a.rel === peek.rel);
   showPeek(list[(i + delta + list.length) % list.length].rel);
+}
+
+/**
+ * Puts the clip in the carousel again as a new cut, starting from the trim of
+ * the cut it was made from (so a second cut is usually 'the same, but later'),
+ * and returns its key.
+ */
+function addCut(rel, fromKey = rel) {
+  const used = flatTiles(state.gallery).filter((t) => t.rel === rel).map((t) => Number((t.cut || 'c1').slice(1)) || 1);
+  const cut = `c${Math.max(1, ...used) + 1}`;
+  const key = `${rel}#${cut}`;
+  const trims = { ...state.trims };
+  if (trims[fromKey]) trims[key] = { ...trims[fromKey] };
+  set({
+    gallery: [...state.gallery, { layout: DEFAULT_LAYOUT, items: [{ rel, cut, description: 'gallery' }] }],
+    trims,
+    hero: state.hero === rel ? null : state.hero,
+  });
+  return key;
 }
 
 function togglePeekPlay() {
@@ -1798,7 +1845,7 @@ function paintPeekBar() {
     h(
       'div.peek__id',
       {},
-      h('span.m.peek__name', {}, asset.name),
+      h('span.m.peek__name', {}, cutOf(peek.key) ? `${asset.name}  ·  ${cutLabel(rel, peek.key)}` : asset.name),
       h(
         'span.m.dimmer',
         { style: { fontSize: '9px', letterSpacing: '0.16em' } },
@@ -1831,6 +1878,22 @@ function paintPeekBar() {
         },
         placed && placed !== 'hero' ? `IN CAROUSEL ${placed} — REMOVE` : 'ADD TO CAROUSEL'
       ),
+      asset.kind === 'video' && placed
+        ? h(
+            'button.chip',
+            {
+              title: 'Put this clip in the carousel again, with its own in and out points',
+              onClick: () => {
+                const key = addCut(rel, peek.key);
+                peek.key = key;
+                if (peek.info) buildTimeline(rel);
+                paintPeekBar();
+                toast(`${cutLabel(rel, key)} added — set its in and out points`);
+              },
+            },
+            'ANOTHER CUT'
+          )
+        : null,
       asset.kind === 'video'
         ? h(
             'button.chip',
@@ -1880,6 +1943,7 @@ function openAssetMenu(rel, x, y) {
     ),
     row(
       item(asset.kind === 'video' ? 'TRIM…' : 'PREVIEW', 'Open it full size  (space)', () => openPeek(rel)),
+      asset.kind === 'video' && inPage && item('ANOTHER CUT', 'The same clip again, with its own in and out points', () => openPeek(rel, addCut(rel))),
       asset.kind === 'video' && trimOf(rel) && item('CLEAR TRIM', 'Encode the whole clip again', () => setTrim(rel, null))
     )
   );
@@ -2584,8 +2648,12 @@ function railRow(row, rowIndex, nameAt) {
             alignSelf: alignEndFor(layout, slot) ? 'flex-end' : 'flex-start',
           },
           draggable: true,
+          // Double-click opens Quick Look on THIS cut, so its own marks are
+          // what the timeline shows and sets.
+          onDblclick: () => openPeek(it.rel, keyOf(it)),
           title:
             (flat?.output || it.rel) +
+            (it.cut ? `  ·  ${cutLabel(it.rel, keyOf(it))}` : '') +
             '\n' +
             layoutLabel(layout) +
             ' \u00b7 ' +
@@ -2634,20 +2702,20 @@ function railRow(row, rowIndex, nameAt) {
         },
         // An <img> is a drag source in its own right, so without this the browser
         // drags the photo instead of the tile and the split never fires.
-        thumb(it.rel, 320, { alt: '', draggable: 'false' }),
+        thumb(it.rel, 320, { alt: '', draggable: 'false' }, keyOf(it)),
         h('span.cell__num.m', {}, pad2((flat?.n ?? 0) + 1)),
         h('span.cell__span.m', {}, spans[slot] === COLS ? 'FULL' : spans[slot] + '/' + COLS),
-        state.trims[it.rel] &&
+        state.trims[keyOf(it)] &&
           h(
             'span.cell__trim.m',
             {
               title: (() => {
-                const t = state.trims[it.rel];
+                const t = state.trims[keyOf(it)];
                 if (t.inFrame === undefined) return 'TRIMMED';
                 return `TRIMMED ${timecode(t.inFrame, t.fps)} → ${timecode(t.outFrame, t.fps)} · ${t.outFrame - t.inFrame + 1} FRAMES`;
               })(),
             },
-            `TRIM ${(state.trims[it.rel].out - state.trims[it.rel].in).toFixed(1)}S`
+            `${it.cut ? cutLabel(it.rel, keyOf(it)) + ' · ' : ''}TRIM ${(state.trims[keyOf(it)].out - state.trims[keyOf(it)].in).toFixed(1)}S`
           ),
         h(
           'button.cell__x',
@@ -2655,7 +2723,11 @@ function railRow(row, rowIndex, nameAt) {
             title: 'Remove',
             onClick: (e) => {
               e.stopPropagation();
-              set({ gallery: removeTile(state.gallery, rowIndex, slot) });
+              // A cut's trim goes with it; the first placement keeps its own,
+              // so putting the clip back finds the marks where they were left.
+              const trims = { ...state.trims };
+              if (it.cut) delete trims[keyOf(it)];
+              set({ gallery: removeTile(state.gallery, rowIndex, slot), trims });
             },
           },
           IC.x()
@@ -3941,7 +4013,7 @@ function screenExport() {
             h('span.dim', {}, s.bytesOut ? `${bytes(s.bytesIn)} → ${bytes(s.bytesOut)}` : bytes(s.bytesIn || 0)),
             // What the encoder is told, straight from the same trims the plan
             // sends — so a clip that reads WHOLE here goes out whole.
-            h('span.trunc', { style: { color: trimLabel(s.rel) ? 'var(--cw)' : undefined }, title: trimLabel(s.rel) ? 'Trimmed in Quick Look — the encode starts and stops here' : '' }, s.kind === 'video' ? trimLabel(s.rel) || 'WHOLE' : ''),
+            h('span.trunc', { style: { color: trimText(s.trim) ? 'var(--cw)' : undefined }, title: trimText(s.trim) ? 'Trimmed in Quick Look — the encode starts and stops here' : '' }, s.kind === 'video' ? trimText(s.trim) || 'WHOLE' : ''),
             h('span.xstatus', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, s.status === 'done' ? IC.check() : null, s.status.toUpperCase())
           )
         )
