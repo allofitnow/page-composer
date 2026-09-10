@@ -70,6 +70,25 @@ jobs:
       # packages npm just installed are the build for this runner's platform.
       - run: node scripts/fetch-ffmpeg.mjs ${{ matrix.args }}
 
+      # Build once here with the log kept, so a failure can be READ from the
+      # run's annotations without signing in. tauri-action then rebuilds from
+      # the warm cargo cache in a minute and does the upload.
+      - name: Build
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -o pipefail
+          npm run tauri build -- ${{ matrix.args }} 2>&1 | tee build.log
+
+      - name: Report what failed
+        if: failure()
+        shell: bash
+        run: |
+          grep -iE 'error|failed|panicked|not found|denied' build.log | grep -viE 'warning|0 errors' | tail -15 | sed 's/^/::error::/' || true
+          tail -30 build.log | sed 's/^/::notice::/'
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
