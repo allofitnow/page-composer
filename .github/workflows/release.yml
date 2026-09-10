@@ -35,6 +35,18 @@ jobs:
             args: '--target aarch64-apple-darwin --bundles app,dmg'
     runs-on: ${{ matrix.os }}
     steps:
+      # Fail in the first second with a readable reason, not after a twelve
+      # minute compile: the bundler refuses to sign without the private key.
+      - name: Check the signing key is configured
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::The repository secret TAURI_SIGNING_PRIVATE_KEY is not set. Add it under Settings → Secrets and variables → Actions, with the contents of ~/.tauri/page-composer.key, plus TAURI_SIGNING_PRIVATE_KEY_PASSWORD (empty)."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
