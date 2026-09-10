@@ -1,19 +1,14 @@
-//! Self-update, from the CMS host the app is pointed at.
+//! Self-update, from the GitHub release.
 //!
-//! The repo is private, so GitHub releases are no use as an update source —
-//! the app could not fetch them without a token baked in. The CMS host is the
-//! one address every copy of the app already talks to and can only be reached
-//! from the studio network, which is exactly where updates should live. nginx
-//! serves `/composer/` there; `scripts/release.mjs` builds, signs and uploads.
-//!
-//! The updater plugin verifies every download against the public key in
-//! tauri.conf.json, so nothing unsigned can ever be installed, whatever is on
-//! the server.
+//! The repo is public, so the latest release's `latest.json` is the update
+//! source (`plugins.updater.endpoints` in tauri.conf.json); GitHub Actions
+//! builds and signs every tagged version for Windows and macOS. The updater
+//! plugin verifies every download against the public key in tauri.conf.json,
+//! so nothing unsigned can ever be installed, whatever is on the release.
 
-use crate::AppState;
 use serde::Serialize;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
 /// The update found by the last check, held so install does not fetch twice.
@@ -29,24 +24,12 @@ pub struct UpdateInfo {
     pub url: String,
 }
 
-/// Where `latest.json` lives on a CMS host.
-pub fn endpoint(base: &str) -> String {
-    format!("{}/composer/latest.json", base.trim_end_matches('/'))
-}
-
-/// Asks the CMS host whether a newer build is up. `None` means this is the
-/// latest; an error means the host could not be asked, which the settings
+/// Asks GitHub whether a newer build is up. `None` means this is the latest;
+/// an error means it could not be asked (offline, say), which the settings
 /// screen shows and the startup check keeps quiet about.
 #[tauri::command]
-pub async fn check_update(app: AppHandle, state: State<'_, AppState>) -> Result<Option<UpdateInfo>, String> {
-    let base = { state.config.lock().map_err(|e| e.to_string())?.payload.url.clone() };
-    let url = endpoint(&base).parse::<tauri::Url>().map_err(|e| e.to_string())?;
-    let updater = app
-        .updater_builder()
-        .endpoints(vec![url])
-        .map_err(|e| e.to_string())?
-        .build()
-        .map_err(|e| e.to_string())?;
+pub async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
     let found = updater.check().await.map_err(|e| e.to_string())?;
     let info = found.as_ref().map(|u| UpdateInfo {
         version: u.version.clone(),

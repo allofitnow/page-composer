@@ -838,7 +838,7 @@ function versionBlock() {
     h(
       'span.m.dimmer',
       { style: { fontSize: '8.5px', letterSpacing: '0.14em', lineHeight: 1.7 } },
-      'UPDATES ARE SIGNED BUILDS PUBLISHED TO THE CMS HOST ABOVE. THE APP CHECKS ONCE AT LAUNCH; INSTALLING RESTARTS IT.'
+      'UPDATES ARE SIGNED BUILDS FROM THE GITHUB RELEASE. THE APP CHECKS ONCE AT LAUNCH; INSTALLING RESTARTS IT.'
     )
   );
 }

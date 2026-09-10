@@ -1,0 +1,68 @@
+# Builds, signs and publishes the desktop app when a version tag is pushed.
+#
+#   npm run release patch      (or minor / major — bumps, tags, pushes)
+#
+# One GitHub release per tag, with the Windows installer, the macOS bundles,
+# their updater signatures and latest.json — which installed apps poll via
+# plugins.updater.endpoints in src-tauri/tauri.conf.json.
+#
+# Needs two repository secrets:
+#   TAURI_SIGNING_PRIVATE_KEY           the contents of ~/.tauri/page-composer.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty for the key made 2026-09-10)
+# A build signed with any other key is refused by every installed app.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ''
+          - os: macos-latest
+            args: '--target aarch64-apple-darwin'
+          - os: macos-13
+            args: '--target x86_64-apple-darwin'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ contains(matrix.os, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # The Node server's native deps (sharp) are not needed to build the
+      # desktop app, but the tauri CLI is a devDependency, so install it all.
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'AOIN Page Composer ${{ github.ref_name }}'
+          releaseBody: 'Installed apps offer this version from the top bar. New installs: the .exe on Windows, the .dmg on a Mac.'
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
