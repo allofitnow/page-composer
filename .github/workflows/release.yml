@@ -46,6 +46,10 @@ jobs:
           # Fingerprints only, never the values: enough to tell whether the
           # secret is the same key as the one on the release machine.
           echo "::notice::signing key fingerprint $(printf '%s' "$KEY" | sha256sum | cut -c1-16) · password length ${#PW}"
+          # The key has an empty password, and GitHub will not store an empty
+          # secret — so a secret that is only whitespace (a space typed to get
+          # past the form) means empty. Every later step reads this.
+          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$(printf '%s' "$PW" | tr -d '[:space:]')" >> "$GITHUB_ENV"
           if [ -z "$KEY" ]; then
             echo "::error::The repository secret TAURI_SIGNING_PRIVATE_KEY is not set. Add it under Settings → Secrets and variables → Actions, with the contents of ~/.tauri/page-composer.key, plus TAURI_SIGNING_PRIVATE_KEY_PASSWORD (empty)."
             exit 1
@@ -81,7 +85,6 @@ jobs:
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -o pipefail
           npm run tauri build -- ${{ matrix.args }} 2>&1 | tee build.log
@@ -100,7 +103,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'AOIN Page Composer ${{ github.ref_name }}'
