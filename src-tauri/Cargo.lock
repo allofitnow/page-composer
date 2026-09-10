@@ -3059,7 +3059,7 @@ dependencies = [
 
 [[package]]
 name = "page-composer"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

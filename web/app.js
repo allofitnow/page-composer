@@ -288,6 +288,7 @@ const state = {
   // lose an arrangement that has not been saved yet.
   cmsGalleryFor: null,
   cmsGallery: null, // { project, rows, was, saving }
+  site: null, // { phase: 'running' | 'live' | 'failed', since, seconds, log, error, at }
   serviceFilter: '',
   login: null, // { email, password, remember, busy, error } while the sign-in modal is open
   loading: null, // { label, detail, since } while a slow backend call is in flight
@@ -707,6 +708,102 @@ function loginModal() {
 }
 
 // ----------------------------------------------------------------- settings
+// ------------------------------------------------------------------ site publish
+//
+// Writing to the CMS no longer builds anything: since 2026-09-07 the only
+// thing that turns the CMS into pages is the site-wide publish, which the
+// team's MCP server runs on the CMS host. This button is that, from here.
+// One state for the whole app, because there is one site and one build.
+
+const fmtElapsed = (ms) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+// The clock in the panel ticks without a full render: the whole screen
+// re-rendering every second would fight a drag in progress.
+setInterval(() => {
+  if (state.site?.phase !== 'running') return;
+  const el = document.getElementById('site-elapsed');
+  if (el) el.textContent = fmtElapsed(Date.now() - state.site.since);
+}, 1000);
+
+async function runSitePublish() {
+  if (state.site?.phase === 'running') return;
+  if (!state.status?.payload?.publishToken) {
+    toast('Add the site publish token under ROOTS first', 'error');
+    openSettings();
+    return;
+  }
+  state.site = { phase: 'running', since: Date.now() };
+  render();
+  try {
+    const r = await rpc.publishSite();
+    state.site = { phase: r.success ? 'live' : 'failed', since: state.site.since, seconds: r.seconds, log: r.log || '', at: Date.now() };
+    if (r.success) {
+      toast(`Site published in ${fmtElapsed(r.seconds * 1000)}`, 'ok');
+      notify('Site published', `Live after ${fmtElapsed(r.seconds * 1000)}`);
+    } else {
+      toast('The site build failed — see the log in the panel', 'error');
+      notify('Site build failed', (r.log || '').slice(-160));
+    }
+  } catch (err) {
+    state.site = { phase: 'failed', since: state.site.since, error: err.message, at: Date.now() };
+    toast(err.message, 'error');
+  }
+  render();
+}
+
+/**
+ * The PUBLISH SITE block for a right-hand pane. `hold` is the reason it is
+ * not the moment — unsaved changes, a write in flight — shown in place of
+ * the button's readiness.
+ */
+function sitePublishPanel(hold = '') {
+  const s = state.site || { phase: 'idle' };
+  const running = s.phase === 'running';
+  const hasToken = Boolean(state.status?.payload?.publishToken);
+  const line = (k, v, id) =>
+    h(
+      'div',
+      { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '8px 0', borderBottom: '1px solid var(--rule)' } },
+      h('span.m.dim', { style: { fontSize: '9px', letterSpacing: '0.18em' } }, k),
+      h('span.m', { id, style: { fontSize: '9.5px', letterSpacing: '0.06em', fontVariantNumeric: 'tabular-nums' } }, v)
+    );
+  return h(
+    'div',
+    { style: { display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '16px', borderTop: '1px solid var(--rule)' } },
+    h('span.ov', {}, 'Site'),
+    h(
+      'p.m.dimmer',
+      { style: { margin: 0, fontSize: '9px', lineHeight: 1.8, letterSpacing: '0.1em' } },
+      'THE CMS DOES NOT REBUILD THE SITE ON ITS OWN. THIS RUNS THE SITE-WIDE PUBLISH ON THE CMS HOST — EVERYTHING SAVED, BY ANYONE — AND WAITS FOR IT. A MINUTE OR TWO.'
+    ),
+    running
+      ? h('div', { style: { borderTop: '1px solid var(--rule)' } }, line('BUILDING', fmtElapsed(Date.now() - s.since), 'site-elapsed'))
+      : s.phase === 'live'
+        ? h('div', { style: { borderTop: '1px solid var(--rule)' } }, line('LIVE', `${fmtElapsed((s.seconds || 0) * 1000)} · ${new Date(s.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`))
+        : s.phase === 'failed'
+          ? h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid var(--cw45)', padding: '10px 12px' } },
+              h('span.m', { style: { fontSize: '9.5px', letterSpacing: '0.18em' } }, 'PUBLISH FAILED'),
+              h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.06em', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '160px', overflow: 'auto' } }, s.error || (s.log || '').slice(-600) || 'no detail came back')
+            )
+          : null,
+    h(
+      'button.btn',
+      {
+        disabled: running || Boolean(hold),
+        title: hold || (hasToken ? 'Rebuild the whole site from what the CMS holds now' : 'Needs the site publish token — it opens the settings'),
+        onClick: runSitePublish,
+      },
+      running ? 'PUBLISHING…' : 'PUBLISH SITE'
+    ),
+    hold ? h('span.m.dimmer', { style: { fontSize: '8.5px', letterSpacing: '0.14em', lineHeight: 1.7 } }, hold.toUpperCase()) : null
+  );
+}
+
 async function openSettings() {
   try {
     const s = await rpc.getSettings();
@@ -733,7 +830,12 @@ const editRoot = (i, patch) => {
 
 async function saveSettings() {
   try {
-    const s = await rpc.saveSettings({ roots: state.settings.roots, payloadUrl: state.settings.payload.url });
+    const s = await rpc.saveSettings({
+      roots: state.settings.roots,
+      payloadUrl: state.settings.payload.url,
+      // Only sent when typed: undefined keeps whatever is stored.
+      publishToken: state.settings.publishTokenNew,
+    });
     state.settings = s;
     state.status = await rpc.status();
     await withLoading('RESCANNING THE ROOTS', s.roots.map((r) => r.path).join('  '), async () => {
@@ -832,7 +934,25 @@ function settingsPanel() {
           'span.m.dimmer',
           { style: { fontSize: '8.5px', letterSpacing: '0.14em' } },
           s.payload.credentials ? 'CREDENTIALS LOADED FROM ENVIRONMENT' : 'NO CREDENTIALS — SET PAYLOAD_ADMIN_EMAIL AND PAYLOAD_ADMIN_PASSWORD'
-        )
+        ),
+        h('span.ov', { style: { paddingTop: '14px' } }, 'Site publish token'),
+        h('input.field', {
+          id: 'publish-token',
+          type: 'password',
+          autocomplete: 'off',
+          spellcheck: false,
+          placeholder: s.payload.publishToken ? 'SET — LEAVE BLANK TO KEEP, TYPE TO REPLACE' : 'MCP_BEARER_TOKEN FROM /etc/aoin-mcp.env ON THE CMS HOST',
+          value: state.settings.publishTokenNew || '',
+          onInput: (e) => { state.settings.publishTokenNew = e.target.value; },
+        }),
+        h(
+          'span.m.dimmer',
+          { style: { fontSize: '8.5px', letterSpacing: '0.14em', lineHeight: 1.7 } },
+          'WHAT THE PUBLISH SITE BUTTON SIGNS IN WITH. IT IS THE TEAM MCP SERVER’S BEARER TOKEN, AND LIKE A REMEMBERED PASSWORD IT IS KEPT IN PLAIN TEXT IN CONFIG.JSON ON THIS MACHINE ONLY.'
+        ),
+        s.payload.publishToken
+          ? h('button.chip', { style: { alignSelf: 'flex-start' }, onClick: () => { state.settings.publishTokenNew = ''; saveSettings(); } }, 'FORGET THE TOKEN')
+          : null
       ),
       h('div.grow'),
       h(
@@ -950,10 +1070,13 @@ function cmsChangedKeys() {
   if (!base || !f) return [];
   const EDITABLE = ['title', 'slug', 'year', 'tour', 'collaborator', 'summary',
     'capabilities', 'services', 'stats', 'credits',
-    'writeup', 'writeupColumns', 'status', 'featured', 'featuredOrder'];
+    'writeup', 'writeupColumns', 'visibility', 'featured', 'featuredOrder'];
   // Deep compare by serialisation: every one of these is plain JSON, and it
   // catches a reordered array (which IS a change) without a bespoke comparator.
-  return EDITABLE.filter((k) => JSON.stringify(f[k] ?? null) !== JSON.stringify(base[k] ?? null));
+  return EDITABLE.filter((k) => JSON.stringify(f[k] ?? null) !== JSON.stringify(base[k] ?? null))
+    // A blank visibility means "keep what is stored", which is not a change to
+    // send: the CMS only takes one of its three values.
+    .filter((k) => !(k === 'visibility' && !f.visibility));
 }
 
 /**
@@ -989,7 +1112,7 @@ async function runCmsSave() {
       cmsDoc: { ...state.cmsDoc, baseline: JSON.parse(JSON.stringify(state.fields)) },
       publishResult: { slug: state.fields.slug, mediaCount: 0, url: state.cmsDoc.url, fields: res.written },
     });
-    const summary = `${state.fields.slug} — ${res.written.length} field${res.written.length === 1 ? '' : 's'}, rebuild queued`;
+    const summary = `${state.fields.slug} — ${res.written.length} field${res.written.length === 1 ? '' : 's'} — publish the site to go live`;
     toast(`Saved ${summary}`);
     notify('Saved to the CMS', summary);
   } catch (err) {
@@ -1035,7 +1158,7 @@ function cmsPickList() {
         h('span', {}, 'CODE'),
         h('span', {}, 'PROJECT'),
         h('span', {}, 'YEAR'),
-        h('span', {}, 'STATUS'),
+        h('span', {}, 'VISIBILITY'),
         h('span', {}, 'WRITE-UP'),
         h('span', {}, 'ORDER')
       ),
@@ -1057,10 +1180,10 @@ function cmsPickList() {
                       letterSpacing: '0.16em',
                       // Unlisted and archive are the ones worth spotting in a long
                       // run; published is the norm and stays quiet.
-                      color: p.status === 'published' ? 'var(--cw45)' : 'var(--cw)',
+                      color: p.visibility === 'published' ? 'var(--cw45)' : 'var(--cw)',
                     },
                   },
-                  (p.status || '').toUpperCase()
+                  (p.visibility || '').toUpperCase()
                 ),
                 p.hasWriteup
                   ? h('span.m', { style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9.5px', letterSpacing: '0.16em' } }, IC.check(), 'YES')
@@ -1740,6 +1863,16 @@ window.addEventListener('pointerdown', (e) => {
   if (menuNode && !(e.target instanceof HTMLElement && e.target.closest('.menu'))) closeMenu();
 });
 window.addEventListener('blur', closeMenu);
+
+// A file dropped anywhere but the write-up would otherwise navigate the webview
+// to it — the window goes blank and everything unsaved on the form is gone. This
+// runs after the drop zone's own handler has bubbled up, so a hit is already
+// dealt with and a miss is simply swallowed.
+for (const kind of ['dragover', 'drop']) {
+  window.addEventListener(kind, (e) => {
+    if (isFileDrag(e)) e.preventDefault();
+  });
+}
 
 // One listener for the whole app. Space is the whole point, so it has to be
 // taken before the browser scrolls the sheet — or, on a focused tile, before
@@ -3255,12 +3388,14 @@ function screenCopy() {
         // Left blank, this changes nothing: a new project publishes live, and an
         // existing one keeps whatever the CMS already holds. Only an explicit
         // pick is sent — the form is built from the asset folder, never from the
-        // document, so a default here would silently overwrite the real status.
+        // document, so a default here would silently overwrite the real visibility.
         selectField(
-          'Status',
-          'status',
+          'Visibility',
+          'visibility',
           [
-            ['', 'AS STORED — publish new, keep existing'],
+            // Editing a live page, the stored value is right there in the form,
+            // so "as stored" has nothing to mean — and the CMS refuses an empty pick.
+            ...(state.cmsDoc ? [] : [['', 'AS STORED — publish new, keep existing']]),
             ['published', 'PUBLISHED — live and listed on the work page'],
             ['unlisted', 'UNLISTED — page builds, nothing links to it'],
             ['archive', 'ARCHIVE — no page at all, CMS only'],
@@ -3311,8 +3446,25 @@ function writeupField(f) {
   const write = (body) => setField('writeup', { ...(f.writeup || {}), lead: '', body });
 
   return h(
-    'div',
-    { style: { display: 'flex', flexDirection: 'column', gap: '7px' } },
+    'div.copydrop',
+    {
+      style: { display: 'flex', flexDirection: 'column', gap: '7px' },
+      // Only a file drag lights this up: dragging a gallery tile across the form
+      // must not look like it can be dropped into the prose.
+      onDragover: (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        e.currentTarget.dataset.over = 'yes';
+      },
+      onDragleave: (e) => e.currentTarget.removeAttribute('data-over'),
+      onDrop: (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        e.currentTarget.removeAttribute('data-over');
+        dropCopyIntoWriteup(e.dataTransfer.files[0]);
+      },
+    },
     h('span.ov', { style: { fontSize: '8.5px', letterSpacing: '0.22em' } }, 'Writeup'),
     paras.map((par, i) =>
       h(
@@ -3339,9 +3491,62 @@ function writeupField(f) {
     h(
       'span.m.dimmer',
       { style: { fontSize: '8.5px', letterSpacing: '0.06em', lineHeight: 1.6 } },
-      'The expandable full write-up (FULL WRITE-UP panel). Formatting from the doc is kept as Markdown — **bold**, *italic*, `code`, <u>underline</u>, [links](url), # headings, > quotes and - lists all publish as rich text.'
+      'The expandable full write-up (FULL WRITE-UP panel). Formatting from the doc is kept as Markdown — **bold**, *italic*, `code`, <u>underline</u>, [links](url), # headings, > quotes and - lists all publish as rich text. Drop a .md file anywhere on this section to replace the paragraphs below; no other field is touched.'
     )
   );
+}
+
+// A `.docx` is a zip, and the parser reads OOXML off the disk rather than out
+// of the browser, so only the text formats can come in through a drop. Exporting
+// the Google Doc as Markdown is the route in.
+const COPY_DROP_RE = /\.(md|markdown|mdown|txt)$/i;
+
+/**
+ * A drag carrying files from outside the app, as opposed to a tile being moved
+ * around the rail. The rail's own drags set custom types, so this is what keeps
+ * the two kinds of drop apart.
+ */
+const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+
+/**
+ * A copy doc dropped straight onto the write-up. ONLY the write-up is taken,
+ * even when the file is a full copy doc with a Title/Year/Capabilities block:
+ * this is for amending prose on a page that already exists, and quietly
+ * rewriting the fields the page publishes with is the one thing an amendment
+ * must not do. A file with no WRITE-UP heading is all write-up, which is what a
+ * bare amendment looks like.
+ */
+async function dropCopyIntoWriteup(file) {
+  if (!file) return;
+  if (!COPY_DROP_RE.test(file.name)) {
+    toast(`${file.name} is not Markdown — export the doc as .md and drop that`, 'error');
+    return;
+  }
+  let parsed;
+  try {
+    parsed = await rpc.parseCopyText(file.name, await file.text());
+  } catch (e) {
+    toast(`Could not read ${file.name}: ${e.message}`, 'error');
+    return;
+  }
+
+  const w = parsed?.fields?.writeup || {};
+  let paras = [w.lead, ...(w.body || [])].map((t) => String(t || '').trim()).filter(Boolean);
+  if (!paras.length) {
+    // No WRITE-UP heading: take the prose, and keep the Markdown twin so bold,
+    // links and headings still publish as rich text.
+    paras = (parsed?.blocks || [])
+      .filter((b) => b.type === 'p' || b.type === 'li')
+      .map((b) => String(b.rich || b.text || '').trim())
+      .filter(Boolean);
+  }
+  if (!paras.length) {
+    toast(`${file.name} has no copy in it`, 'error');
+    return;
+  }
+
+  setField('writeup', { lead: '', body: paras });
+  toast(`Write-up replaced from ${file.name} — ${paras.length} paragraph${paras.length === 1 ? '' : 's'}`);
 }
 
 /** Folds a legacy `writeup.lead` into the paragraph list, once, on load. */
@@ -3510,7 +3715,7 @@ async function runPublish() {
     set({ publishing: false, publishResult: res });
     // The toast only exists while this window is in front, and a publish runs
     // long enough that nobody watches it land.
-    const summary = `${res.slug} — ${res.mediaCount} media, rebuild queued`;
+    const summary = `${res.slug} — ${res.mediaCount} media — publish the site to go live`;
     toast(`Published ${summary}`);
     notify('Published to the CMS', summary);
   } catch (err) {
@@ -3564,7 +3769,7 @@ function screenCmsSave() {
         row('PROJECT', state.fields?.title || ''),
         row('CODE', doc?.code || '—'),
         row('URL', `/work/${state.fields?.slug || ''}`),
-        row('STATUS', (state.fields?.status || 'published').toUpperCase())
+        row('VISIBILITY', (state.fields?.visibility || 'published').toUpperCase())
       ),
       h(
         'div',
@@ -3616,9 +3821,10 @@ function screenCmsSave() {
           ? h(
               'span.m.dimmer',
               { style: { fontSize: '8.5px', letterSpacing: '0.14em', lineHeight: 1.7, paddingTop: '10px', borderTop: '1px solid var(--rule)' } },
-              `SAVED ${(state.publishResult.fields || []).join(', ').toUpperCase()} — REBUILD QUEUED`
+              `SAVED ${(state.publishResult.fields || []).join(', ').toUpperCase()} — LIVE AFTER THE NEXT SITE PUBLISH`
             )
-          : null
+          : null,
+        sitePublishPanel(state.publishing ? 'the save is still being written' : changed.length ? 'save to the CMS first, or the publish will not have it' : '')
       )
     )
   );
@@ -3768,7 +3974,7 @@ function screenExport() {
         h(
           'div',
           { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-          [`UPLOAD ${steps.length} MEDIA DOCS`, `${state.publishResult ? 'UPDATED' : 'CREATE'} PROJECT / ${slugify(state.fields?.slug || state.base).toUpperCase()}`, 'TRIGGER ASTRO REBUILD'].map((label, i) =>
+          [`UPLOAD ${steps.length} MEDIA DOCS`, `${state.publishResult ? 'UPDATED' : 'CREATE'} PROJECT / ${slugify(state.fields?.slug || state.base).toUpperCase()}`, 'LIVE AFTER THE NEXT SITE PUBLISH'].map((label, i) =>
             h(
               'div',
               { style: { display: 'flex', alignItems: 'center', gap: '9px' } },
@@ -3788,7 +3994,8 @@ function screenExport() {
               state.publishResult.url
             )
           : null,
-        h('button.btn', { disabled: !canPublish || state.publishing, onClick: runPublish }, state.publishing ? 'PUBLISHING…' : 'PUBLISH TO STAGING')
+        h('button.btn', { disabled: !canPublish || state.publishing, onClick: runPublish }, state.publishing ? 'PUBLISHING…' : 'PUBLISH TO STAGING'),
+        sitePublishPanel(state.publishing ? 'the project is still being written to the CMS' : '')
       )
     )
   );
@@ -3812,12 +4019,12 @@ function publishGate(canPublish, v, failed) {
 // that happen to share a number. So this is one flat run, and a project can sit
 // anywhere in it regardless of when the job was.
 //
-// Saving is expensive in a way that is invisible from the app: Payload's
-// afterChange hook runs the whole Astro build SYNCHRONOUSLY, once per changed
-// document. Ten rewritten projects is ten full site builds, one after another.
-// That is why the planner below works to write as FEW documents as it can
-// rather than simply renumbering the run 1..n — dragging one project should
-// cost one build, not twenty.
+// The planner below writes as FEW documents as it can rather than simply
+// renumbering the run 1..n. It was built when every Payload write ran the
+// whole Astro build synchronously (ten rewritten projects was ten builds);
+// since 2026-09-07 nothing rebuilds until the site-wide publish, but every
+// write is still a version in the document's history, so one drag should
+// still cost one write, not twenty.
 
 /**
  * The longest run of positions whose existing `order` values are ALREADY
@@ -4165,16 +4372,20 @@ function startWorkDrag(e) {
 // exact shape the site will build at whatever width the window happens to be.
 
 const gallerySig = (rows) =>
-  rows.map((r) => `${layoutOf(r)}:${r.items.map((i) => i.rel).join(',')}`).join('|');
+  rows.map((r) => `${layoutOf(r)}:${r.items.map((i) => `${i.rel}@${i.focusX},${i.focusY}`).join(',')}`).join('|');
+
+/** The editable rows for a project as the CMS returned it. */
+const galleryRows = (project) =>
+  project.gallery.map((r) => ({
+    layout: r.layout,
+    items: r.images.map((im) => ({ rel: im.id, url: im.url, name: im.name, video: im.video, focusX: clampPct(im.focusX), focusY: clampPct(im.focusY) })),
+  }));
 
 async function openCmsGallery(id) {
   set({ cmsGallery: null, cmsGalleryFor: id });
   try {
     const project = await withLoading('READING THE PROJECT', '', () => rpc.cmsProject(id), { inline: true });
-    const rows = project.gallery.map((r) => ({
-      layout: r.layout,
-      items: r.images.map((im) => ({ rel: im.id, url: im.url, name: im.name, video: im.video })),
-    }));
+    const rows = galleryRows(project);
     set({ cmsGallery: { project, rows, was: gallerySig(rows), saving: false, library: null } });
     // Its own uploads are what anyone opening this screen wants first, so the
     // library is filled in rather than waiting to be searched.
@@ -4611,15 +4822,12 @@ async function saveCmsGallery() {
   try {
     const project = await rpc.saveCmsGallery(
       g.project.id,
-      g.rows.map((r) => ({ layout: layoutOf(r), images: r.items.map((i) => i.rel) }))
+      g.rows.map((r) => ({ layout: layoutOf(r), images: r.items.map((i) => ({ id: i.rel, focusX: i.focusX, focusY: i.focusY })) }))
     );
-    const rows = project.gallery.map((r) => ({
-      layout: r.layout,
-      items: r.images.map((im) => ({ rel: im.id, url: im.url, name: im.name, video: im.video })),
-    }));
+    const rows = galleryRows(project);
     set({ cmsGallery: { project, rows, was: gallerySig(rows), saving: false, library: g.library, root: g.root } });
     toast(`${project.title} gallery saved`, 'ok');
-    notify('Gallery saved', `${project.title} — the site is rebuilding`);
+    notify('Gallery saved', `${project.title} — publish the site to go live`);
   } catch (err) {
     if (state.cmsGallery) state.cmsGallery.saving = false;
     render();
@@ -4806,6 +5014,210 @@ function startGalleryDrag(e) {
   document.addEventListener('pointercancel', finish);
 }
 
+// ------------------------------------------------------------------ crop
+//
+// The site draws every slot with object-fit: cover at a fixed aspect, so the
+// one freedom is where inside the picture that window sits — exactly what
+// object-position takes, and what the CMS keeps as focusX / focusY. The editor
+// shows the whole picture dimmed with the slot's window over it; dragging
+// slides the picture under the window, Instagram-style, and the two numbers
+// are what get written. Nothing is resampled and the file is untouched.
+
+const clampPct = (v) => Math.max(0, Math.min(100, Math.round(Number.isFinite(v) ? v : 50)));
+
+/** The cell's thumbnail, cropped the way the site will crop it. */
+function focusedThumb(item) {
+  const img = workThumb(item.url, 'cell');
+  img.style.objectPosition = `${clampPct(item.focusX)}% ${clampPct(item.focusY)}%`;
+  return img;
+}
+
+function openCrop(ri, slot) {
+  const g = state.cmsGallery;
+  const item = g?.rows[ri]?.items[slot];
+  if (!item || g.saving || g.crop) return;
+  // Two copies of the same frame: one dimmed under everything, one clipped
+  // to the window. The thumbnail route rather than the file itself because a
+  // gallery is mostly video, and a poster frame is what the site crops too.
+  // ONE request, though: the dimmed copy is a plain <img> that takes the
+  // frame's src once it has one, so the same file is never built twice at
+  // once — two builds racing on one cache path was a picture that never came.
+  const main = cmsThumbImg(item.url, 1600, { alt: '', draggable: 'false' });
+  const ghost = h('img', { alt: '', draggable: 'false' });
+  const imgs = [ghost, main];
+  const at = { x: clampPct(item.focusX), y: clampPct(item.focusY) };
+  const crop = { ri, slot, x: at.x, y: at.y, was: at, nat: null, failed: false, imgs };
+  // The picture's true shape is what the geometry needs. A cached copy can be
+  // complete before any listener exists and its load event already gone, so
+  // decode() is asked as well as the events: whichever settles first wins,
+  // and the rest are no-ops. In the desktop app the src arrives later, after
+  // the thumbnail is made, and the load event is what catches that.
+  const settle = () => {
+    if (g.crop !== crop || crop.nat || !main.naturalWidth) return;
+    crop.nat = { w: main.naturalWidth, h: main.naturalHeight };
+    ghost.src = main.currentSrc || main.src;
+    render();
+  };
+  const fail = () => {
+    if (g.crop !== crop || crop.nat) return;
+    crop.failed = true;
+    render();
+  };
+  main.addEventListener('load', settle);
+  main.addEventListener('error', fail);
+  // The desktop app marks a thumbnail it could not make ON the element rather
+  // than firing an event, so that has to be watched for as well — otherwise a
+  // frame that never comes reads as one still on its way.
+  new MutationObserver(() => { if (main.dataset.failed) fail(); }).observe(main, { attributes: true, attributeFilter: ['data-failed'] });
+  if (main.getAttribute('src')) main.decode().then(settle, () => (main.naturalWidth ? settle() : fail()));
+  g.crop = crop;
+  render();
+  setTimeout(() => document.getElementById('cropov')?.focus(), 0);
+}
+
+function closeCrop(commit) {
+  const g = state.cmsGallery;
+  const c = g?.crop;
+  if (!c) return;
+  if (commit) {
+    const item = g.rows[c.ri]?.items[c.slot];
+    if (item) {
+      item.focusX = c.x;
+      item.focusY = c.y;
+    }
+  }
+  g.crop = null;
+  render();
+}
+
+/** Window and picture sizes in px: the window at the slot's aspect, the picture covering it. */
+function cropGeometry(c, layout) {
+  const A = ratioOf(aspectFor(layout, c.slot) || '3 / 2');
+  const maxW = Math.max(320, window.innerWidth * 0.6);
+  const maxH = Math.max(200, window.innerHeight * 0.56);
+  let W = maxW;
+  let H = W / A;
+  if (H > maxH) {
+    H = maxH;
+    W = H * A;
+  }
+  const nat = c.nat || { w: 3, h: 2 };
+  const pa = nat.w / nat.h;
+  const iw = pa > A ? H * pa : W;
+  const ih = pa > A ? H : W / pa;
+  return { W, H, iw, ih };
+}
+
+// object-position semantics: the X% point of the picture sits on the X% point
+// of the window, so the picture's offset is the overflow times the fraction.
+const cropOffset = (geo, x, y) => ({ left: -((geo.iw - geo.W) * x) / 100, top: -((geo.ih - geo.H) * y) / 100 });
+
+function cropOverlay(g) {
+  const c = g.crop;
+  const row = g.rows[c.ri];
+  const item = row?.items[c.slot];
+  if (!row || !item) return null;
+  const layout = layoutOf(row);
+  const geo = cropGeometry(c, layout);
+  const off = cropOffset(geo, c.x, c.y);
+  const px = geo.iw - geo.W;
+  const py = geo.ih - geo.H;
+  const freeX = px > 0.5;
+  const freeY = py > 0.5;
+  const imgStyle = { position: 'absolute', width: `${geo.iw}px`, height: `${geo.ih}px`, left: `${off.left}px`, top: `${off.top}px`, maxWidth: 'none', display: 'block', pointerEvents: 'none', userSelect: 'none' };
+  Object.assign(c.imgs[0].style, imgStyle, { opacity: c.nat ? 0.3 : 0 });
+  Object.assign(c.imgs[1].style, imgStyle, { opacity: c.nat ? 1 : 0 });
+
+  // The drag updates the DOM directly and only commits to state on release:
+  // a full render per pointer move would fight the pointer.
+  const apply = () => {
+    const o = cropOffset(geo, c.x, c.y);
+    for (const im of c.imgs) {
+      im.style.left = `${o.left}px`;
+      im.style.top = `${o.top}px`;
+    }
+    const read = document.getElementById('cropread');
+    if (read) read.textContent = `X ${c.x} · Y ${c.y}`;
+  };
+  const move = (dx, dy) => {
+    if (freeX) c.x = clampPct(c.x + dx);
+    if (freeY) c.y = clampPct(c.y + dy);
+    apply();
+  };
+  const onDown = (e) => {
+    if (e.button !== 0 || !c.nat) return;
+    e.preventDefault();
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const ox = c.x;
+    const oy = c.y;
+    const onMove = (ev) => {
+      // Dragging the picture right slides the window LEFT over it.
+      if (freeX) c.x = clampPct(ox - ((ev.clientX - sx) / px) * 100);
+      if (freeY) c.y = clampPct(oy - ((ev.clientY - sy) / py) * 100);
+      apply();
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  };
+  const onKey = (e) => {
+    const step = e.shiftKey ? 5 : 1;
+    if (e.key === 'Escape') closeCrop(false);
+    else if (e.key === 'Enter') closeCrop(true);
+    else if (e.key === 'ArrowLeft') move(-step, 0);
+    else if (e.key === 'ArrowRight') move(step, 0);
+    else if (e.key === 'ArrowUp') move(0, -step);
+    else if (e.key === 'ArrowDown') move(0, step);
+    else return;
+    e.preventDefault();
+  };
+
+  const hint = !c.nat
+    ? c.failed ? 'NO PREVIEW FOR THIS FILE — THE NUMBERS STILL SET THE CROP' : 'READING THE PICTURE — ESC CANCELS'
+    : !freeX && !freeY ? 'THIS PICTURE IS THE SLOT’S OWN SHAPE — THERE IS NOTHING TO MOVE'
+    : freeX && freeY ? 'DRAG THE PICTURE · ARROW KEYS NUDGE, SHIFT FOR 5'
+    : freeX ? 'DRAG LEFT OR RIGHT · ARROW KEYS NUDGE, SHIFT FOR 5' : 'DRAG UP OR DOWN · ARROW KEYS NUDGE, SHIFT FOR 5';
+
+  return h(
+    'div.cropov',
+    {
+      id: 'cropov',
+      tabindex: '0',
+      onKeydown: onKey,
+      // The dark surround is a cancel; the panel itself is not.
+      onPointerdown: (e) => { if (e.target === e.currentTarget) closeCrop(false); },
+    },
+    h(
+      'div.cropov__top',
+      {},
+      h('span.ov', {}, 'Crop'),
+      h('span.m.dim', { style: { fontSize: '9.5px', letterSpacing: '0.16em' } }, `${item.name}  ·  ${layoutLabel(layout)}  ·  SLOT ${c.slot + 1}`)
+    ),
+    h(
+      'div.cropov__stage',
+      { style: { width: `${geo.W}px`, height: `${geo.H}px` }, 'data-free': freeX || freeY ? '1' : null, onPointerdown: onDown },
+      c.imgs[0],
+      h('div.cropov__win', {}, c.imgs[1], ['tl', 'tr', 'bl', 'br'].map((k) => h(`div.cropov__hd.cropov__hd--${k}`)))
+    ),
+    h(
+      'div.cropov__bar',
+      {},
+      h('span.m', { id: 'cropread', style: { fontSize: '10px', letterSpacing: '0.18em', fontVariantNumeric: 'tabular-nums', minWidth: '96px' } }, `X ${c.x} · Y ${c.y}`),
+      h('span.m.dim', { style: { fontSize: '9px', letterSpacing: '0.16em' } }, hint),
+      h('div.grow'),
+      h('button.chip', { onClick: () => { c.x = 50; c.y = 50; apply(); } }, 'CENTRE'),
+      h('button.chip', { onClick: () => closeCrop(false) }, 'CANCEL'),
+      h('button.chip', { 'aria-pressed': 'true', onClick: () => closeCrop(true) }, 'DONE')
+    )
+  );
+}
+
 // ------------------------------------------------------------------ rendering
 
 function galleryCell(row, ri, slot, item, n) {
@@ -4822,12 +5234,15 @@ function galleryCell(row, ri, slot, item, n) {
         aspectRatio: aspectFor(layout, slot) || '3 / 2',
         alignSelf: alignEndFor(layout, slot) ? 'flex-end' : 'flex-start',
       },
-      title: `${item.name}\n${layoutLabel(layout)} · slot ${slot + 1} of ${row.items.length}`,
+      title: `${item.name}\n${layoutLabel(layout)} · slot ${slot + 1} of ${row.items.length}\nDouble-click to set where the crop sits`,
       onPointerdown: startGalleryDrag,
+      onDblclick: () => openCrop(ri, slot),
     },
-    workThumb(item.url, 'cell'),
+    focusedThumb(item),
     h('span.gcell__num.m', {}, pad2(n)),
     item.video ? h('span.gcell__vid.m', {}, 'VIDEO') : null,
+    // Only a moved crop gets a badge: centred is the norm and stays quiet.
+    item.focusX !== 50 || item.focusY !== 50 ? h('span.gcell__crop.m', { title: 'Crop centre, left→right · top→bottom' }, `${item.focusX} · ${item.focusY}`) : null,
     h(
       'button.gcell__x',
       {
@@ -4926,7 +5341,7 @@ function cmsGalleryPanel() {
       h(
         'p.m.dimmer',
         { style: { margin: 0, fontSize: '10px', lineHeight: 1.75, letterSpacing: '0.06em', maxWidth: '760px' } },
-        'Every image here is already in the CMS, so rearranging costs one write rather than a re-compose. Drag between rows, or into a seam to give an image a row of its own; a row picks up or drops a layout as it gains and loses images, and the buttons above each row set which one. Cells are drawn at the shape the site will build them.'
+        'Every image here is already in the CMS, so rearranging costs one write rather than a re-compose. Drag between rows, or into a seam to give an image a row of its own; a row picks up or drops a layout as it gains and loses images, and the buttons above each row set which one. Cells are drawn at the shape the site will build them — double-click one to set where its crop sits.'
       ),
       g.rows.length
         ? h(
@@ -4944,6 +5359,7 @@ function cmsGalleryPanel() {
       rootPanel(),
       h('div', { style: { minHeight: '40px' } })
     ),
+    g.crop ? cropOverlay(g) : null,
     h(
       'div.pane.pane--r',
       { style: { width: '300px', padding: '38px 26px', gap: '16px' } },
@@ -4967,16 +5383,17 @@ function cmsGalleryPanel() {
       h(
         'p.m.dimmer',
         { style: { margin: 0, fontSize: '9px', lineHeight: 1.8, letterSpacing: '0.1em' } },
-        'TAKING AN IMAGE OUT REMOVES IT FROM THIS PAGE ONLY — THE FILE STAYS IN THE CMS AND ANY OTHER PROJECT USING IT IS UNTOUCHED. SAVING REBUILDS THE SITE ONCE.'
+        'TAKING AN IMAGE OUT REMOVES IT FROM THIS PAGE ONLY — THE FILE STAYS IN THE CMS AND ANY OTHER PROJECT USING IT IS UNTOUCHED. IT GOES LIVE WITH THE NEXT SITE-WIDE PUBLISH.'
       ),
       g.saving
         ? h(
             'div',
             { style: { display: 'flex', flexDirection: 'column', gap: '7px', border: '1px solid var(--cw45)', padding: '12px 14px' } },
             h('span.m', { style: { fontSize: '9.5px', letterSpacing: '0.18em' } }, 'WRITING'),
-            h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.1em' } }, 'BUILDING THE SITE')
+            h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.1em' } }, 'SAVING TO THE CMS')
           )
         : null,
+      sitePublishPanel(g.saving ? 'the gallery is still being written' : dirty ? 'save the gallery first, or the publish will not have it' : ''),
       h('div.grow'),
       !signedIn ? h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.14em', lineHeight: 1.7 } }, 'SIGN IN TO WRITE THE GALLERY TO THE CMS') : null,
       h(
@@ -5252,7 +5669,7 @@ function workOrderPanel() {
         'p.m.dimmer',
         { style: { margin: 0, fontSize: '9px', lineHeight: 1.8, letterSpacing: '0.1em' } },
         n
-          ? `SAVING WRITES ${n} PROJECT${n > 1 ? 'S' : ''}, AND THE CMS REBUILDS THE SITE ONCE PER PROJECT — EXPECT ABOUT A MINUTE EACH. NOTHING ELSE IS TOUCHED.`
+          ? `SAVING WRITES ${n} PROJECT${n > 1 ? 'S' : ''} TO THE CMS AND NOTHING ELSE. THE SITE SHOWS THE NEW RUN AFTER A PUBLISH.`
           : 'NOTHING HAS MOVED. DRAG A PROJECT TO CHANGE THE RUN.'
       ),
       n && !w.touched
@@ -5267,9 +5684,10 @@ function workOrderPanel() {
             'div',
             { style: { display: 'flex', flexDirection: 'column', gap: '7px', border: '1px solid var(--cw45)', padding: '12px 14px' } },
             h('span.m', { style: { fontSize: '9.5px', letterSpacing: '0.18em' } }, `WRITING ${w.saving.done} / ${w.saving.total}`),
-            h('span.m.dimmer.trunc', { style: { fontSize: '9px', letterSpacing: '0.1em' } }, w.saving.title || 'BUILDING THE SITE')
+            h('span.m.dimmer.trunc', { style: { fontSize: '9px', letterSpacing: '0.1em' } }, w.saving.title || 'SAVING TO THE CMS')
           )
         : null,
+      sitePublishPanel(busy ? 'the order is still being written' : n ? 'save the order first, or the publish will not have it' : ''),
       h('div.grow'),
       !signedIn
         ? h('span.m.dimmer', { style: { fontSize: '9px', letterSpacing: '0.14em', lineHeight: 1.7 } }, 'SIGN IN TO WRITE THE ORDER TO THE CMS')

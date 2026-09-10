@@ -11,6 +11,7 @@ mod copydoc;
 mod media;
 mod payload;
 mod scan;
+mod site;
 mod util;
 
 use config::{Config, Root, RootStatus};
@@ -57,6 +58,8 @@ pub struct Settings {
 pub struct SettingsPayload {
     url: String,
     credentials: bool,
+    /// Whether one is set, never the token itself.
+    publish_token: bool,
 }
 
 fn settings_of(cfg: &Config) -> Settings {
@@ -65,6 +68,7 @@ fn settings_of(cfg: &Config) -> Settings {
         payload: SettingsPayload {
             url: cfg.payload.url.clone(),
             credentials: !cfg.payload.email.is_empty() && !cfg.payload.password.is_empty(),
+            publish_token: !site::publish_token(cfg).is_empty(),
         },
     }
 }
@@ -106,6 +110,7 @@ fn save_settings(
     state: State<'_, AppState>,
     roots: Vec<Root>,
     payload_url: Option<String>,
+    publish_token: Option<String>,
 ) -> CmdResult<Settings> {
     let mut cfg = state.config.lock().map_err(err)?;
     cfg.apply_roots(roots);
@@ -118,6 +123,12 @@ fn save_settings(
         if !trimmed.is_empty() {
             cfg.payload.url = trimmed;
         }
+    }
+    // Only an explicit value changes the token: None leaves it alone, and the
+    // empty string clears it. Like a remembered password it is stored in plain
+    // text in config.json; the settings screen says so.
+    if let Some(token) = publish_token {
+        cfg.payload.publish_token = token.trim().to_string();
     }
     cfg.save(&state.config_path).map_err(err)?;
     scan::invalidate_all();
@@ -212,6 +223,7 @@ pub fn run() {
             media::probe_media,
             media::cms_thumb,
             copydoc::read_copy_doc,
+            copydoc::parse_copy_text,
             copydoc::validate_fields,
             compose::plan_compose,
             compose::start_compose,
@@ -227,6 +239,7 @@ pub fn run() {
             payload::save_cms_fields,
             payload::payload_login,
             payload::payload_logout,
+            site::publish_site,
         ])
         .run(tauri::generate_context!())
         .expect("error while running AOIN page composer");

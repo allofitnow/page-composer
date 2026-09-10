@@ -15,6 +15,9 @@ export const config = {
     url: process.env.PAYLOAD_URL || raw.payload.url,
     email: process.env.PAYLOAD_ADMIN_EMAIL || raw.payload.email,
     password: process.env.PAYLOAD_ADMIN_PASSWORD || raw.payload.password,
+    // The bearer token for the team's MCP server on the CMS host, whose
+    // `publish` tool is the only thing that rebuilds the site.
+    publishToken: process.env.MCP_BEARER_TOKEN || raw.payload.publishToken || '',
   },
 };
 
@@ -71,6 +74,19 @@ export function saveConfig() {
   // Credentials are never written as a side effect of saving roots — only
   // saveCredentials() below can do that, and only when explicitly asked.
   onDisk.payload = { ...onDisk.payload, url: config.payload.url };
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(onDisk, null, 2) + '\n');
+}
+
+/**
+ * Writes the site-publish token to config.json. Like a remembered password it
+ * sits there in plain text, local-only; the settings screen says so. One that
+ * came from the environment is never written back.
+ */
+export function savePublishToken(token) {
+  config.payload.publishToken = token || '';
+  if (process.env.MCP_BEARER_TOKEN) return;
+  const onDisk = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+  onDisk.payload = { ...onDisk.payload, publishToken: token || '' };
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(onDisk, null, 2) + '\n');
 }
 

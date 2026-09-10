@@ -75,8 +75,13 @@ async function blocksOf(file) {
     return out;
   }
 
-  const text = fs.readFileSync(file, 'utf8');
+  return markdownBlocks(fs.readFileSync(file, 'utf8'));
+}
+
+/** The Markdown half of blocksOf, reusable for text that has no file behind it. */
+function markdownBlocks(text) {
   return text
+    .replace(/\r\n/g, '\n')
     .split(/\n{2,}/)
     .map((b) => b.trim())
     .filter(Boolean)
@@ -253,7 +258,20 @@ function applyField(fields, field, value, serviceList) {
  * the UI can show the mapping side by side and you can correct it.
  */
 export async function parseCopyDoc(file, serviceList = []) {
-  const blocks = await blocksOf(file);
+  return { ...fieldsFromBlocks(await blocksOf(file), serviceList), file: path.basename(file) };
+}
+
+/**
+ * The same parse, from Markdown text that never touched the disk. A file dropped
+ * onto the write-up editor arrives as text rather than as a path, and `.docx` is
+ * a zip so it cannot come this way at all.
+ */
+export function parseCopyText(text, serviceList = []) {
+  return { ...fieldsFromBlocks(markdownBlocks(String(text || '')), serviceList), file: '' };
+}
+
+/** The block walk both entry points share. */
+function fieldsFromBlocks(blocks, serviceList = []) {
   const fields = { capabilities: [], stats: [], credits: [], writeup: { lead: '', body: [] } };
   const mapped = [];
 
@@ -436,7 +454,7 @@ export async function parseCopyDoc(file, serviceList = []) {
   // capabilities any more — the traffic only ever went the other way.
   if (!fields.capabilities.length && fields.role) fields.capabilities = [fields.role];
 
-  return { file: path.basename(file), fields, blocks: mapped };
+  return { fields, blocks: mapped };
 }
 
 // Mirrors the required fields on the live Projects collection: title, slug,

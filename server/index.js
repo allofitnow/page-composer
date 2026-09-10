@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { config, roots, ROOT_DIR, applyRoots, saveConfig, saveCredentials, reachable } from './config.js';
+import { config, roots, ROOT_DIR, applyRoots, saveConfig, saveCredentials, savePublishToken, reachable } from './config.js';
+import { publishSite } from './site.js';
 import { listProjects, getProject, invalidateAll, decodeId, resolveRel, mergeIds } from './scan.js';
 import { thumbnail, preview, cmsThumb } from './thumbs.js';
 import { ffmpegStatus, probe, videoInfo } from './ffmpeg.js';
-import { parseCopyDoc, validate, TAXONOMY } from './copydoc.js';
+import { parseCopyDoc, parseCopyText, validate, TAXONOMY } from './copydoc.js';
 import { startCompose, getJob, plan } from './compose.js';
 import { publish, uploadComposed, payloadStatus, checkLogin, setCredentials, clearCredentials, serviceCategories, listWorkOrder, saveWorkOrder, cmsProject, cmsMedia, saveCmsGallery, cmsProjects, cmsProjectFields, saveCmsFields } from './payload.js';
 import { safeJoin } from './util.js';
@@ -36,10 +37,17 @@ app.get('/api/status', wrap(async (_req, res) => {
   });
 }));
 
+const settingsPayload = () => ({
+  url: config.payload.url,
+  credentials: Boolean(config.payload.email && config.payload.password),
+  // Whether one is set, never the token itself.
+  publishToken: Boolean(config.payload.publishToken),
+});
+
 app.get('/api/settings', wrap((_req, res) => {
   res.json({
     roots: (config.roots || []).map((r) => ({ ...r, online: reachable(r.path) })),
-    payload: { url: config.payload.url, credentials: Boolean(config.payload.email && config.payload.password) },
+    payload: settingsPayload(),
   });
 }));
 
@@ -47,12 +55,19 @@ app.post('/api/settings', wrap((req, res) => {
   const saved = applyRoots(req.body.roots || []);
   if (req.body.payloadUrl) config.payload.url = String(req.body.payloadUrl).trim().replace(/\/$/, '');
   saveConfig();
+  // Only an explicit value changes the token: undefined leaves it alone, and
+  // the empty string clears it.
+  if (typeof req.body.publishToken === 'string') savePublishToken(req.body.publishToken.trim());
   invalidateAll();
   res.json({
     roots: saved.map((r) => ({ ...r, online: reachable(r.path) })),
-    payload: { url: config.payload.url, credentials: Boolean(config.payload.email && config.payload.password) },
+    payload: settingsPayload(),
   });
 }));
+
+// The site-wide publish: blocks for the whole build, which is the point --
+// the answer is whether it went green.
+app.post('/api/site/publish', wrap(async (_req, res) => res.json(await publishSite())));
 
 /**
  * Directory picker for pointing at a NAS: lists the sub-folders of `path` so
@@ -136,6 +151,13 @@ app.get('/api/copy/:id', wrap(async (req, res) => {
   if (!rel) return res.json({ file: null, fields: null, blocks: [], validation: null });
   const parsed = await parseCopyDoc(resolveRel(decodeId(req.params.id), rel), await serviceCategories());
   res.json({ ...parsed, rel, validation: validate(parsed.fields) });
+}));
+
+// A Markdown file dropped straight onto the write-up editor: the browser hands
+// over text, not a path, so there is no project folder to resolve against.
+app.post('/api/copy-text', wrap(async (req, res) => {
+  const parsed = parseCopyText(req.body.text || '', await serviceCategories());
+  res.json({ ...parsed, file: req.body.name || '', rel: '', validation: validate(parsed.fields) });
 }));
 
 app.post('/api/validate', wrap((req, res) => res.json(validate(req.body.fields || {}))));

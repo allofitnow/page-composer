@@ -160,7 +160,10 @@ export async function cmsThumb(url, width = 420) {
       return await build(staged, isVideo ? 'video' : 'image', width, out);
     } finally {
       release();
-      fs.rmSync(staged, { force: true });
+      // The thumbnail is already on disk by now. On the A: share the staged
+      // copy sometimes refuses to delete (EPERM) -- a leftover temp file is
+      // not a reason to answer 400 and show NO PREVIEW for a frame that exists.
+      try { fs.rmSync(staged, { force: true }); } catch { /* swept next time */ }
     }
   })().finally(() => inflight.delete(out));
 

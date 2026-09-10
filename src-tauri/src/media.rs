@@ -447,31 +447,64 @@ pub async fn cms_thumb(
 
     tauri::async_runtime::spawn_blocking(move || {
         let _slot = Slot::acquire();
+        // Two callers can miss the cache for one key at the same moment (the
+        // crop editor asks for a frame the gallery may also be drawing), and
+        // two writers on one path serve a half-written jpeg to whoever reads
+        // first — which the webview shows as a picture that never arrives.
+        // So every call writes its own file and renames it into place, whole.
+        // The temp name keeps the .jpg: ffmpeg picks its output format from it.
+        let nonce = format!(
+            "{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let stem = out.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let part = out.with_file_name(format!("{stem}.{nonce}.part.jpg"));
+        let finish = |part: &Path, out: &Path| -> Result<(), String> {
+            match std::fs::rename(part, out) {
+                Ok(()) => Ok(()),
+                // The other writer got there first and its file is in use:
+                // theirs is whole too, so ours is simply surplus.
+                Err(_) if out.exists() => {
+                    let _ = std::fs::remove_file(part);
+                    Ok(())
+                }
+                Err(e) => {
+                    let _ = std::fs::remove_file(part);
+                    Err(e.to_string())
+                }
+            }
+        };
         if is_video {
             // ffmpeg reads a file, not a buffer, and it has to seek to find a
             // frame worth showing — so the clip is staged on disk and removed
             // again whether or not the frame comes out.
-            let staged = out.with_extension("src");
+            let staged = out.with_file_name(format!("{stem}.{nonce}.src"));
             std::fs::write(&staged, &bytes).map_err(|e| e.to_string())?;
-            let made = build(&cfg, &staged, Kind::Video, width, &out);
+            let made = build(&cfg, &staged, Kind::Video, width, &part);
             let _ = std::fs::remove_file(&staged);
             made.map_err(|e| {
-                let _ = std::fs::remove_file(&out);
+                let _ = std::fs::remove_file(&part);
                 e.to_string()
             })?;
+            finish(&part, &out)?;
             return Ok::<_, String>(out);
         }
         // From memory for a still: these are the app's own composed uploads,
         // already upright, so there is no EXIF orientation left to honour.
         let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
         let img = resize_within(img, width);
-        let mut file = std::fs::File::create(&out).map_err(|e| e.to_string())?;
+        let mut file = std::fs::File::create(&part).map_err(|e| e.to_string())?;
         let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut file, 72);
         img.into_rgb8().write_with_encoder(encoder).map_err(|e| {
-            // Half a jpeg on disk would be served forever after.
-            let _ = std::fs::remove_file(&out);
+            let _ = std::fs::remove_file(&part);
             e.to_string()
         })?;
+        drop(file);
+        finish(&part, &out)?;
         Ok::<_, String>(out)
     })
     .await

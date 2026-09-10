@@ -156,7 +156,7 @@ textarea.field { resize: vertical; line-height: 1.6; }
 
 .prow {
   display: grid;
-  grid-template-columns: 76px 1fr 62px 62px 96px 108px;
+  grid-template-columns: 76px 1fr 62px 84px 96px 108px;
   gap: 16px; align-items: center;
   padding: 14px 16px;
   border-bottom: 1px solid var(--rule);
@@ -553,6 +553,11 @@ textarea.field { resize: vertical; line-height: 1.6; }
 .herodrop[data-over='yes'] { outline: 2px solid var(--cw) !important; outline-offset: -2px; }
 .herodrop[data-over='no'] { outline: 2px solid #ff6b6b !important; outline-offset: -2px; cursor: no-drop; }
 
+/* The write-up takes a dropped .md so copy can be amended without going back to
+   the project folder. The outline sits outside the paragraph boxes so it reads
+   as the whole section accepting the file, not one textarea. */
+.copydrop[data-over='yes'] { outline: 2px dashed var(--cw); outline-offset: 6px; border-radius: 2px; }
+
 /* The drop preview: a rectangle over the half the incoming tile will take. */
 .cell[data-drop]::after {
   content: '';
@@ -883,25 +888,25 @@ textarea.field { resize: vertical; line-height: 1.6; }
   font-size: 8px; letter-spacing: 0.18em;
   padding: 3px 5px 2px;
 }
-/* The marquee toggle. Bottom right of the still: the position badge holds the
-   top left and REWRITE the top right, and it has to sit ON the image so the
-   run reads as a set of pictures rather than a form. */
-.wtile__star {
-  position: absolute; bottom: 8px; right: 13px;
-  background: rgba(0, 0, 0, 0.62); color: var(--cw45);
-  border: 1px solid var(--cw45);
-  font-size: 9px; letter-spacing: 0.14em;
-  padding: 3px 6px 2px;
-  cursor: pointer;
-  font-variant-numeric: tabular-nums;
-  transition: color 120ms, border-color 120ms, background-color 120ms;
-}
-.wtile__star:hover { color: var(--cw); border-color: var(--cw); }
-/* On the marquee: filled, and carrying its position in the run. */
-.wtile__star[data-on="1"] {
-  background: var(--cw); color: #000; border-color: var(--cw);
-}
-
+/* The marquee toggle. Bottom right of the still: the position badge holds the
+   top left and REWRITE the top right, and it has to sit ON the image so the
+   run reads as a set of pictures rather than a form. */
+.wtile__star {
+  position: absolute; bottom: 8px; right: 13px;
+  background: rgba(0, 0, 0, 0.62); color: var(--cw45);
+  border: 1px solid var(--cw45);
+  font-size: 9px; letter-spacing: 0.14em;
+  padding: 3px 6px 2px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  transition: color 120ms, border-color 120ms, background-color 120ms;
+}
+.wtile__star:hover { color: var(--cw); border-color: var(--cw); }
+/* On the marquee: filled, and carrying its position in the run. */
+.wtile__star[data-on="1"] {
+  background: var(--cw); color: #000; border-color: var(--cw);
+}
+
 .wtile__name {
   font-weight: 500; font-size: 14px; letter-spacing: 0.02em; line-height: 1.2;
 }
@@ -964,6 +969,43 @@ textarea.field { resize: vertical; line-height: 1.6; }
   transition: opacity 140ms var(--brand);
 }
 .gcell:hover .gcell__x { opacity: 1; }
+.gcell__crop {
+  position: absolute; bottom: 7px; left: 7px;
+  background: rgba(0, 0, 0, 0.72); border: 1px solid var(--cw45); color: var(--cw);
+  font-size: 8px; letter-spacing: 0.14em; padding: 3px 5px 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the crop editor: the whole picture dimmed, the slot's window over it */
+.cropov {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  outline: none;
+}
+.cropov__top, .cropov__bar { display: flex; align-items: center; gap: 16px; width: min(92vw, 1160px); }
+.cropov__bar { gap: 12px; }
+.cropov__stage { position: relative; touch-action: none; flex: 0 0 auto; }
+.cropov__stage[data-free] { cursor: grab; }
+.cropov__stage[data-free]:active { cursor: grabbing; }
+.cropov__stage img { transition: opacity 200ms var(--brand); }
+.cropov__win {
+  position: absolute; inset: 0; overflow: hidden;
+  outline: 1px solid var(--cw);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+/* Thirds, the way a camera or Instagram shows them. */
+.cropov__win::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(to right, transparent calc(33.33% - 0.5px), rgba(217, 225, 234, 0.3) calc(33.33% - 0.5px), rgba(217, 225, 234, 0.3) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px), transparent calc(66.67% - 0.5px), rgba(217, 225, 234, 0.3) calc(66.67% - 0.5px), rgba(217, 225, 234, 0.3) calc(66.67% + 0.5px), transparent calc(66.67% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(33.33% - 0.5px), rgba(217, 225, 234, 0.3) calc(33.33% - 0.5px), rgba(217, 225, 234, 0.3) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px), transparent calc(66.67% - 0.5px), rgba(217, 225, 234, 0.3) calc(66.67% - 0.5px), rgba(217, 225, 234, 0.3) calc(66.67% + 0.5px), transparent calc(66.67% + 0.5px));
+}
+.cropov__hd { position: absolute; width: 16px; height: 16px; border: 2px solid var(--cw); pointer-events: none; z-index: 1; }
+.cropov__hd--tl { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.cropov__hd--tr { top: -1px; right: -1px; border-left: 0; border-bottom: 0; }
+.cropov__hd--bl { bottom: -1px; left: -1px; border-right: 0; border-top: 0; }
+.cropov__hd--br { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
 .gcell[data-lift="1"] {
   z-index: 5;
   cursor: grabbing;

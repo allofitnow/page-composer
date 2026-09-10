@@ -1,5 +1,7 @@
 //! Publishing to the Payload CMS: upload the composed media, then create or
-//! update the project. Payload's own `afterChange` hook fires the Astro rebuild.
+//! update the project. Nothing here rebuilds the site: since 2026-09-07 the
+//! collection has no afterChange hook (drafts are on), and only the site-wide
+//! publish -- `deploy/publish.sh` on .245, or the MCP `publish` tool -- does.
 
 use crate::config::Config;
 use crate::AppState;
@@ -162,6 +164,8 @@ pub struct PayloadStatus {
     pub url: String,
     pub credentials: bool,
     pub email: String,
+    /// Whether a site-publish token is set, never the token itself.
+    pub publish_token: bool,
 }
 
 fn api(cfg: &Config, path: &str) -> String {
@@ -188,6 +192,7 @@ pub async fn status(cfg: &Config) -> PayloadStatus {
         url: cfg.payload.url.clone(),
         credentials: !email.is_empty() && !password.is_empty(),
         email,
+        publish_token: !crate::site::publish_token(cfg).is_empty(),
     }
 }
 
@@ -582,10 +587,14 @@ async fn run_publish(
         // An explicit pick on step 04 wins; blank means "as stored", which for a
         // new project is published and for an existing one is whatever the update
         // branch below puts back -- so re-publishing never re-lists an unlisted page.
-        "status": match fields["status"].as_str() {
+        "visibility": match fields["visibility"].as_str() {
             Some(s) if !s.is_empty() => s,
             _ => "published",
         },
+        // The collection has Payload drafts enabled, and its `_status` defaults
+        // to "draft" on create. A composer publish is a finished page, so say
+        // so -- otherwise a new project lands in the admin as an unpublished draft.
+        "_status": "published",
         "year": fields["year"].as_str().unwrap_or_default(),
         "capabilities": fields["capabilities"],
         "stats": fields["stats"],
@@ -634,12 +643,12 @@ async fn run_publish(
     let res = if let Some(prev) = &existing_doc {
         say(app, &mut messages, format!("updating existing project {slug}"));
         doc["order"] = prev["order"].clone();
-        // Same reasoning as `order`: the form cannot know the document's status,
+        // Same reasoning as `order`: the form cannot know the document's visibility,
         // and `unlisted` is a deliberate editorial choice (the page builds, but
         // nothing on the site links to it). Forcing "published" here would quietly
         // undo that on every re-publish. Archive carries over for the same reason.
-        if fields["status"].as_str().unwrap_or_default().is_empty() {
-            doc["status"] = match prev["status"].as_str() {
+        if fields["visibility"].as_str().unwrap_or_default().is_empty() {
+            doc["visibility"] = match prev["visibility"].as_str() {
                 Some(s) if !s.is_empty() => json!(s),
                 _ => json!("published"),
             };
@@ -684,7 +693,7 @@ async fn run_publish(
     let saved: Value = serde_json::from_str(&text)?;
     let saved = saved.get("doc").cloned().unwrap_or(saved);
 
-    say(app, &mut messages, "Payload afterChange hook fired — Astro rebuild queued");
+    say(app, &mut messages, "project saved — the site shows it after the next site-wide publish");
 
     Ok(PublishResult {
         id: saved["id"].as_str().unwrap_or_default().to_string(),
@@ -766,7 +775,7 @@ fn work_project_from(cfg: &Config, doc: &Value) -> Option<WorkProject> {
 
 async fn work_order(client: &reqwest::Client, cfg: &Config) -> Result<Vec<WorkProject>> {
     let res = client
-        .get(api(cfg, "/projects?limit=200&depth=1&sort=order&where[status][equals]=published"))
+        .get(api(cfg, "/projects?limit=200&depth=1&sort=order&where[visibility][equals]=published"))
         .send()
         .await?;
     if !res.status().is_success() {
@@ -811,9 +820,9 @@ pub struct OrderChange {
 /// Writes the planned `order` values, one document at a time, and reports each
 /// one as it lands.
 ///
-/// One at a time is not caution, it is the only correct way: Payload's
-/// afterChange hook runs the site build SYNCHRONOUSLY, so two writes in flight
-/// would be two builds fighting over the same checkout. It also means a write
+/// One at a time so the progress report is per document. (Until 2026-09-07 it
+/// was also the only correct way: every write ran a full site build, and two
+/// in flight fought over one checkout; writes are quick now.) Back then a write
 /// takes about as long as a build, which is why the progress event exists —
 /// there is nothing else to distinguish a legitimate five-minute save from a
 /// hang.
@@ -910,6 +919,11 @@ pub struct GalleryImage {
     pub video: bool,
     pub width: Option<u64>,
     pub height: Option<u64>,
+    /// Where the slot's crop centres, as the CMS stores it (0..=100, 50 is
+    /// the middle). Lives on the gallery entry, not the media document: the
+    /// same file can sit in two slots and be cropped differently.
+    pub focus_x: u32,
+    pub focus_y: u32,
 }
 
 #[derive(Serialize, Clone)]
@@ -972,7 +986,14 @@ fn gallery_image(cfg: &Config, media: &Value) -> Option<GalleryImage> {
         video: mime.starts_with("video/"),
         width: media["width"].as_u64(),
         height: media["height"].as_u64(),
+        focus_x: 50,
+        focus_y: 50,
     })
+}
+
+/// A focal-point percentage as the CMS stores it; anything unset is the centre.
+fn focus_pct(v: &Value) -> u32 {
+    v.as_f64().map(|n| n.round().clamp(0.0, 100.0) as u32).unwrap_or(50)
 }
 
 #[tauri::command]
@@ -999,7 +1020,16 @@ pub async fn cms_project(state: State<'_, AppState>, id: String) -> Result<CmsPr
                 .map(|row| {
                     let images: Vec<GalleryImage> = row["images"]
                         .as_array()
-                        .map(|imgs| imgs.iter().filter_map(|i| gallery_image(&cfg, &i["image"])).collect())
+                        .map(|imgs| {
+                            imgs.iter()
+                                .filter_map(|i| {
+                                    let mut im = gallery_image(&cfg, &i["image"])?;
+                                    im.focus_x = focus_pct(&i["focusX"]);
+                                    im.focus_y = focus_pct(&i["focusY"]);
+                                    Some(im)
+                                })
+                                .collect()
+                        })
                         .unwrap_or_default();
                     let layout = row["layout"].as_str().unwrap_or("full").to_string();
                     GalleryRow {
@@ -1082,10 +1112,24 @@ pub async fn cms_media(state: State<'_, AppState>, query: String) -> Result<Vec<
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedImage {
+    /// The media id.
+    pub id: String,
+    #[serde(default = "centre")]
+    pub focus_x: f64,
+    #[serde(default = "centre")]
+    pub focus_y: f64,
+}
+fn centre() -> f64 {
+    50.0
+}
+
+#[derive(serde::Deserialize)]
 pub struct SavedRow {
     pub layout: String,
-    /// Media ids, in slot order.
-    pub images: Vec<String>,
+    /// Slot order.
+    pub images: Vec<SavedImage>,
 }
 
 /// Writes a rearranged gallery back.
@@ -1115,7 +1159,11 @@ pub async fn save_cms_gallery(
             let layout = if LAYOUTS.contains(&r.layout.as_str()) { r.layout.clone() } else { "full".to_string() };
             json!({
                 "layout": layout,
-                "images": r.images.iter().map(|i| json!({ "image": i })).collect::<Vec<_>>(),
+                "images": r
+                    .images
+                    .iter()
+                    .map(|i| json!({ "image": i.id, "focusX": focus_pct(&json!(i.focus_x)), "focusY": focus_pct(&json!(i.focus_y)) }))
+                    .collect::<Vec<_>>(),
             })
         })
         .collect();
@@ -1272,7 +1320,7 @@ pub struct CmsListProject {
     pub slug: String,
     pub code: String,
     pub year: String,
-    pub status: String,
+    pub visibility: String,
     pub order: Option<f64>,
     pub featured: bool,
     pub image: String,
@@ -1314,7 +1362,7 @@ pub async fn cms_projects(state: State<'_, AppState>) -> Result<Vec<CmsListProje
                         slug: d["slug"].as_str().unwrap_or_default().to_string(),
                         code: d["code"].as_str().unwrap_or_default().to_string(),
                         year: d["year"].as_str().unwrap_or_default().to_string(),
-                        status: d["status"].as_str().unwrap_or("published").to_string(),
+                        visibility: d["visibility"].as_str().unwrap_or("published").to_string(),
                         order: d["order"].as_f64(),
                         featured: d["featured"].as_bool().unwrap_or(false),
                         image: if image.is_empty() {
@@ -1410,7 +1458,7 @@ pub async fn cms_project_fields(state: State<'_, AppState>, id: String) -> Resul
         "credits": doc["credits"].as_array().cloned().unwrap_or_default(),
         "writeup": { "lead": "", "body": paragraphs },
         "writeupColumns": if doc["writeupColumns"].as_str() == Some("2") { "2" } else { "1" },
-        "status": doc["status"].as_str().unwrap_or("published"),
+        "visibility": doc["visibility"].as_str().unwrap_or("published"),
         "featured": doc["featured"].as_bool().unwrap_or(false),
         "featuredOrder": doc["featuredOrder"].as_u64(),
     });
@@ -1433,7 +1481,7 @@ pub async fn cms_project_fields(state: State<'_, AppState>, id: String) -> Resul
 const EDITABLE_FIELDS: &[&str] = &[
     "title", "slug", "year", "tour", "collaborator", "summary",
     "capabilities", "services", "stats", "credits",
-    "writeup", "writeupColumns", "status", "featured", "featuredOrder",
+    "writeup", "writeupColumns", "visibility", "featured", "featuredOrder",
 ];
 
 /// Writes back ONLY the keys named in `changed`.
@@ -1455,9 +1503,12 @@ pub async fn save_cms_fields(
     writeup_slate: Option<Value>,
 ) -> Result<Value, String> {
     let cfg = { state.config.lock().map_err(|e| e.to_string())?.clone() };
+    // A blank visibility means "keep what is stored": the CMS only takes one
+    // of its three values, and would refuse the empty string.
     let keys: Vec<String> = changed
         .into_iter()
         .filter(|k| EDITABLE_FIELDS.contains(&k.as_str()))
+        .filter(|k| k != "visibility" || !fields["visibility"].as_str().unwrap_or_default().is_empty())
         .collect();
     if keys.is_empty() {
         return Ok(json!({ "id": id, "written": Vec::<String>::new() }));

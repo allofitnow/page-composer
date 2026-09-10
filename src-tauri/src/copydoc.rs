@@ -686,6 +686,18 @@ pub fn parse_with_services(file: &Path, service_list: &[String]) -> Result<(Fiel
         markdown_blocks(&std::fs::read_to_string(file)?.replace("\r\n", "\n"))
     };
 
+    Ok(parse_blocks(blocks, service_list))
+}
+
+/// The same parse, from Markdown text that never touched the disk. A file
+/// dropped onto the write-up editor arrives through the webview as text rather
+/// than as a path, and `.docx` is a zip so it cannot come this way at all.
+pub fn parse_markdown_text(text: &str, service_list: &[String]) -> (Fields, Vec<Block>) {
+    parse_blocks(markdown_blocks(&text.replace("\r\n", "\n")), service_list)
+}
+
+/// The block walk both entry points share.
+fn parse_blocks(blocks: Vec<Block>, service_list: &[String]) -> (Fields, Vec<Block>) {
     let mut f = Fields::default();
     let mut mapped: Vec<Block> = Vec::new();
     let mut section: Option<&'static str> = None;
@@ -919,7 +931,7 @@ pub fn parse_with_services(file: &Path, service_list: &[String]) -> Result<(Fiel
         }
     }
 
-    Ok((f, mapped))
+    (f, mapped)
 }
 
 pub fn validate(f: &Fields) -> Validation {
@@ -997,6 +1009,36 @@ pub async fn read_copy_doc(
         blocks,
         validation,
     }))
+}
+
+/// A Markdown file dropped onto the write-up editor. The webview hands over the
+/// text, not a path, so this is the disk-free twin of `read_copy_doc` — same
+/// parser, same shape back, so the caller cannot tell which way the copy came
+/// in. `rel` is empty because there is no project folder behind it.
+#[tauri::command]
+pub async fn parse_copy_text(
+    state: State<'_, AppState>,
+    name: Option<String>,
+    text: String,
+) -> Result<ParsedDoc, String> {
+    let cfg: Config = state.config.lock().map_err(|e| e.to_string())?.clone();
+    // The services cell has no delimiter once Google Docs exports it, so the
+    // parser is handed the CMS list to split it against.
+    let services: Vec<String> = crate::payload::service_categories(&cfg)
+        .await
+        .into_iter()
+        .map(|s| s.label)
+        .collect();
+    let (fields, blocks) = parse_markdown_text(&text, &services);
+    let validation = validate(&fields);
+
+    Ok(ParsedDoc {
+        file: name.unwrap_or_default(),
+        rel: String::new(),
+        fields,
+        blocks,
+        validation,
+    })
 }
 
 #[tauri::command]

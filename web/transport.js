@@ -45,9 +45,10 @@ export const rpc = isTauri
       getProject: (id) => invoke('get_project', { id }),
       mergeIds: (ids) => invoke('merge_project_ids', { ids }),
       getSettings: () => invoke('get_settings'),
-      saveSettings: ({ roots, payloadUrl }) => invoke('save_settings', { roots, payloadUrl }),
+      saveSettings: ({ roots, payloadUrl, publishToken }) => invoke('save_settings', { roots, payloadUrl, publishToken: publishToken ?? null }),
       browse: (path) => invoke('browse_dir', { path }),
       readCopyDoc: (id, rel) => invoke('read_copy_doc', { id, rel: rel || null }),
+      parseCopyText: (name, text) => invoke('parse_copy_text', { name, text }),
       validateFields: (fields) => invoke('validate_fields', { fields }),
       planCompose: (body) => invoke('plan_compose', body),
       startCompose: (body) => invoke('start_compose', body),
@@ -64,6 +65,7 @@ export const rpc = isTauri
       saveCmsGallery: (id, rows) => invoke('save_cms_gallery', { id, rows }),
       payloadLogin: ({ email, password, remember }) => invoke('payload_login', { email, password, remember }),
       payloadLogout: () => invoke('payload_logout'),
+      publishSite: () => invoke('publish_site'),
     }
   : {
       status: () => http('/api/status'),
@@ -71,9 +73,10 @@ export const rpc = isTauri
       getProject: (id) => http(`/api/project/${id}`),
       mergeIds: (ids) => httpPost('/api/merge', { ids }).then((r) => r.id),
       getSettings: () => http('/api/settings'),
-      saveSettings: ({ roots, payloadUrl }) => httpPost('/api/settings', { roots, payloadUrl }),
+      saveSettings: ({ roots, payloadUrl, publishToken }) => httpPost('/api/settings', { roots, payloadUrl, publishToken }),
       browse: (path) => http(`/api/browse?${q({ path })}`),
       readCopyDoc: (id, rel) => http(`/api/copy/${id}?${q({ rel })}`),
+      parseCopyText: (name, text) => httpPost('/api/copy-text', { name, text }),
       validateFields: (fields) => httpPost('/api/validate', { fields }).then((v) => v),
       planCompose: (body) => httpPost('/api/plan', body),
       startCompose: (body) => httpPost('/api/compose', body),
@@ -90,6 +93,7 @@ export const rpc = isTauri
       saveCmsGallery: (id, rows) => httpPost(`/api/cms-project/${id}/gallery`, { rows }),
       payloadLogin: ({ email, password, remember }) => httpPost('/api/payload/login', { email, password, remember }),
       payloadLogout: () => httpPost('/api/payload/logout', {}),
+      publishSite: () => httpPost('/api/site/publish', {}),
     };
 
 /**

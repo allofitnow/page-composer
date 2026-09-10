@@ -28,6 +28,10 @@ pub struct Payload {
     pub email: String,
     #[serde(default)]
     pub password: String,
+    /// The bearer token for the team's MCP server on the CMS host, whose
+    /// `publish` tool is the only thing that rebuilds the site.
+    #[serde(default)]
+    pub publish_token: String,
 }
 
 fn default_payload_url() -> String {
@@ -106,6 +110,7 @@ fn default_payload() -> Payload {
         url: default_payload_url(),
         email: String::new(),
         password: String::new(),
+        publish_token: String::new(),
     }
 }
 
@@ -159,6 +164,9 @@ impl Config {
         if let Ok(v) = std::env::var("PAYLOAD_ADMIN_PASSWORD") {
             cfg.payload.password = v;
         }
+        if let Ok(v) = std::env::var("MCP_BEARER_TOKEN") {
+            cfg.payload.publish_token = v;
+        }
         cfg
     }
 
@@ -173,6 +181,9 @@ impl Config {
         }
         if std::env::var("PAYLOAD_ADMIN_PASSWORD").is_ok() {
             on_disk.payload.password = String::new();
+        }
+        if std::env::var("MCP_BEARER_TOKEN").is_ok() {
+            on_disk.payload.publish_token = String::new();
         }
         std::fs::write(path, serde_json::to_string_pretty(&on_disk)? + "\n")?;
         Ok(())

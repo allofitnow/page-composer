@@ -184,7 +184,11 @@ async function nextOrder(jwt) {
 
 /**
  * Uploads the composed assets and creates (or updates) the project.
- * Payload's afterChange hook fires the Astro rebuild on its own.
+ *
+ * This does NOT rebuild the site. Since 2026-09-07 the projects collection
+ * has no afterChange hook (Payload drafts are on, and a per-document save is
+ * treated as work in progress); the only thing that rebuilds Astro is the
+ * site-wide publish -- `deploy/publish.sh` on .245, or the MCP `publish` tool.
  */
 export async function publish({ fields, manifestPath, onProgress = () => {} }) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -251,7 +255,11 @@ export async function publish({ fields, manifestPath, onProgress = () => {} }) {
     // An explicit pick on step 04 wins; blank means "as stored", which for a new
     // project is published and for an existing one is whatever the update branch
     // below puts back -- so re-publishing never silently re-lists an unlisted page.
-    status: fields.status || 'published',
+    visibility: fields.visibility || 'published',
+    // The collection has Payload drafts enabled, and its `_status` defaults to
+    // 'draft' on create. A composer publish is a finished page, so say so --
+    // otherwise a new project lands in the admin as an unpublished draft.
+    _status: 'published',
     year: String(fields.year),
     capabilities: fields.capabilities,
     tour: fields.tour || undefined,
@@ -279,11 +287,12 @@ export async function publish({ fields, manifestPath, onProgress = () => {} }) {
   if (existingDocs.length) {
     onProgress({ stage: 'project', message: `updating existing project ${fields.slug}` });
     doc.order = existingDocs[0].order;
-    // Same reasoning as `order`: the form cannot know the document's status, and
-    // `unlisted` is a deliberate editorial choice (the page builds, but nothing on
-    // the site links to it). Forcing 'published' here would quietly undo that every
-    // time the project was re-published. Archive is carried over for the same reason.
-    doc.status = fields.status || existingDocs[0].status || 'published';
+    // Same reasoning as `order`: the form cannot know the document's visibility,
+    // and `unlisted` is a deliberate editorial choice (the page builds, but nothing
+    // on the site links to it). Forcing 'published' here would quietly undo that
+    // every time the project was re-published. Archive is carried over for the
+    // same reason.
+    doc.visibility = fields.visibility || existingDocs[0].visibility || 'published';
     // The publish form is built from the asset folder and the copy doc, never
     // from the document, so the Featured box reads unticked whatever the CMS
     // holds. Sending that back would drop the project off the home marquee as
@@ -307,7 +316,7 @@ export async function publish({ fields, manifestPath, onProgress = () => {} }) {
   if (!res.ok) throw new Error(`project write failed: ${res.status} ${text}`);
   const saved = JSON.parse(text).doc;
 
-  onProgress({ stage: 'rebuild', message: 'Payload afterChange hook fired — Astro rebuild queued' });
+  onProgress({ stage: 'rebuild', message: 'project saved — the site shows it after the next site-wide publish' });
   return {
     unknownServices,
     id: saved.id,
@@ -383,7 +392,7 @@ const imageUrl = (media) => {
  * the site does not.
  */
 export async function listWorkOrder() {
-  const res = await fetch(api('/projects?limit=200&depth=1&sort=order&where[status][equals]=published'));
+  const res = await fetch(api('/projects?limit=200&depth=1&sort=order&where[visibility][equals]=published'));
   if (!res.ok) throw new Error(`could not read the work page: ${res.status} ${await res.text()}`);
   const docs = (await res.json()).docs || [];
   return docs
@@ -411,9 +420,10 @@ export async function listWorkOrder() {
 /**
  * Writes the planned `order` values one at a time.
  *
- * One at a time is not caution: Payload's afterChange hook runs the site build
- * SYNCHRONOUSLY, so two writes in flight would be two builds fighting over the
- * same checkout. Only `order` is sent -- a partial update leaves `data.title`
+ * One at a time so the progress report is per document. (Until 2026-09-07 it
+ * was also the only safe way: every write ran a full site build, and two in
+ * flight fought over one checkout. Writes are quick now -- nothing rebuilds
+ * until the site-wide publish.) Only `order` is sent -- a partial update leaves `data.title`
  * unset, so the collection's beforeChange hook returns early and the generated
  * project code is left alone.
  */
@@ -426,9 +436,8 @@ export async function saveWorkOrder(changes, onProgress = () => {}) {
     const title = titles.get(id) || id;
     onProgress({ done: i, total, title });
     // `order` and the marquee fields ride in ONE patch per document, never two.
-    // Every write blocks on a full site build, so a project whose position and
-    // featured state both changed would otherwise cost two builds to save one
-    // decision. Only the keys actually present are sent, which keeps this a
+    // One write per decision keeps the version history readable (every PATCH is
+    // a version now that drafts are on). Only the keys actually present are sent, which keeps this a
     // partial update: `data.title` stays unset, so the collection's beforeChange
     // hook returns early and the generated code is left alone.
     const body = {};
@@ -460,6 +469,9 @@ export async function saveWorkOrder(changes, onProgress = () => {}) {
 
 /** The layouts the collection accepts; anything else is rejected by Payload. */
 const GALLERY_LAYOUTS = ['full','full-16-9','full-2-1','full-3-1','full-19-5','full-27-4','two-up','split-8-4','split-5-7','three-up'];
+
+/** A focal-point percentage as the CMS stores it; anything unset is the centre. */
+const focusPct = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : 50);
 
 const galleryImage = (media) => {
   // At depth 2 the relation is the media document. A project saved another way
@@ -509,7 +521,14 @@ export async function cmsProject(id) {
   const gallery = (doc.gallery || [])
     .map((row) => ({
       layout: GALLERY_LAYOUTS.includes(row.layout) ? row.layout : 'full',
-      images: (row.images || []).map((i) => galleryImage(i.image)).filter(Boolean),
+      images: (row.images || [])
+        .map((i) => {
+          const im = galleryImage(i?.image);
+          // The focal point lives on the gallery entry, not the media doc:
+          // the same file can sit in two slots and be cropped differently.
+          return im ? { ...im, focusX: focusPct(i?.focusX), focusY: focusPct(i?.focusY) } : null;
+        })
+        .filter(Boolean),
     }))
     // A row whose images all failed to resolve would render as an empty band
     // nobody could drag out of.
@@ -544,7 +563,10 @@ export async function saveCmsGallery(id, rows) {
     .filter((r) => (r.images || []).length)
     .map((r) => ({
       layout: GALLERY_LAYOUTS.includes(r.layout) ? r.layout : 'full',
-      images: r.images.map((image) => ({ image })),
+      images: r.images.map((im) => {
+        const it = im && typeof im === 'object' ? im : { id: im };
+        return { image: it.id, focusX: focusPct(it.focusX), focusY: focusPct(it.focusY) };
+      }),
     }));
   const res = await fetch(api(`/projects/${encodeURIComponent(id)}`), {
     method: 'PATCH',
@@ -558,7 +580,7 @@ export async function saveCmsGallery(id, rows) {
 
 export async function payloadStatus() {
   const { email, password } = credentials();
-  const who = { url: config.payload.url, credentials: Boolean(email && password), email: email || '' };
+  const who = { url: config.payload.url, credentials: Boolean(email && password), email: email || '', publishToken: Boolean(config.payload.publishToken) };
   try {
     const res = await fetchWithin(api('/projects?limit=1'), 4000);
     return { reachable: res.ok, ...who };
@@ -587,7 +609,7 @@ export async function cmsProjects() {
       slug: d.slug || '',
       code: d.code || '',
       year: d.year || '',
-      status: d.status || 'published',
+      visibility: d.visibility || 'published',
       order: typeof d.order === 'number' ? d.order : null,
       featured: Boolean(d.featured),
       image: imageUrl(d.image),
@@ -645,7 +667,7 @@ export async function cmsProjectFields(id) {
       })),
       writeup: { lead: '', body: paragraphs },
       writeupColumns: doc.writeupColumns === '2' ? '2' : '1',
-      status: doc.status || 'published',
+      visibility: doc.visibility || 'published',
       featured: Boolean(doc.featured),
       featuredOrder: typeof doc.featuredOrder === 'number' ? doc.featuredOrder : null,
     },
@@ -664,7 +686,7 @@ export async function cmsProjectFields(id) {
 const EDITABLE = new Set([
   'title', 'slug', 'year', 'tour', 'collaborator', 'summary',
   'capabilities', 'services', 'stats', 'credits',
-  'writeup', 'writeupColumns', 'status', 'featured', 'featuredOrder',
+  'writeup', 'writeupColumns', 'visibility', 'featured', 'featuredOrder',
 ]);
 
 /**
@@ -679,7 +701,9 @@ const EDITABLE = new Set([
  * media (see cmsProjectFields).
  */
 export async function saveCmsFields(id, fields, changed, writeupSlate) {
-  const keys = (changed || []).filter((k) => EDITABLE.has(k));
+  // A blank visibility means "keep what is stored": the CMS only takes one of
+  // its three values, and would refuse the empty string.
+  const keys = (changed || []).filter((k) => EDITABLE.has(k) && !(k === 'visibility' && !fields?.visibility));
   if (!keys.length) return { id, written: [] };
 
   const jwt = await login();
