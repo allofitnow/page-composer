@@ -1,6 +1,6 @@
 [package]
 name = "page-composer"
-version = "0.1.13"
+version = "0.1.14"
 description = "AOIN project page composer"
 edition = "2021"
 rust-version = "1.77"
