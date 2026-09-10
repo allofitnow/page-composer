@@ -48,7 +48,11 @@
         "installMode": "currentUser"
       }
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "externalBin": [
+      "binaries/ffmpeg",
+      "binaries/ffprobe"
+    ]
   },
   "plugins": {
     "updater": {

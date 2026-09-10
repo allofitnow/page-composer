@@ -1,7 +1,20 @@
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import { config } from './config.js';
+
+// The static builds npm installed (the same ones the desktop app bundles), so
+// the web version works on a machine with nothing but Node. Optional: a
+// checkout without devDependencies simply falls through to the system.
+const require = createRequire(import.meta.url);
+const packaged = (name) => {
+  try {
+    return name === 'ffmpeg' ? require('ffmpeg-static') : require('ffprobe-static').path;
+  } catch {
+    return null;
+  }
+};
 
 const run = promisify(execFile);
 
@@ -13,6 +26,7 @@ const run = promisify(execFile);
 const CANDIDATES = {
   ffmpeg: [
     config.ffmpeg,
+    packaged('ffmpeg'),
     'C:/ProgramData/chocolatey/lib/ffmpeg-full/tools/ffmpeg/bin/ffmpeg.exe',
     'C:/ProgramData/chocolatey/lib/ffmpeg/tools/ffmpeg/bin/ffmpeg.exe',
     'C:/ffmpeg/bin/ffmpeg.exe',
@@ -24,6 +38,7 @@ const CANDIDATES = {
   ],
   ffprobe: [
     config.ffprobe,
+    packaged('ffprobe'),
     'C:/ProgramData/chocolatey/lib/ffmpeg-full/tools/ffmpeg/bin/ffprobe.exe',
     'C:/ProgramData/chocolatey/lib/ffmpeg/tools/ffmpeg/bin/ffprobe.exe',
     'C:/ffmpeg/bin/ffprobe.exe',
@@ -41,7 +56,7 @@ async function resolve(which) {
   if (resolved[which] !== undefined) return resolved[which];
   for (const cand of CANDIDATES[which]) {
     if (!cand) continue;
-    if (cand.includes('/') && !fs.existsSync(cand)) continue;
+    if (/[\\/]/.test(cand) && !fs.existsSync(cand)) continue;
     try {
       await run(cand, ['-version'], { timeout: 10_000, windowsHide: true });
       resolved[which] = cand;

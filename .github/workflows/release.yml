@@ -53,6 +53,10 @@ jobs:
       # desktop app, but the tauri CLI is a devDependency, so install it all.
       - run: npm ci
 
+      # ffmpeg and ffprobe ride inside the installer as sidecars; the static
+      # packages npm just installed are the build for this runner's platform.
+      - run: node scripts/fetch-ffmpeg.mjs ${{ matrix.args }}
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

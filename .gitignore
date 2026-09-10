@@ -6,6 +6,8 @@ tauri.log
 tauri.err
 design/build/
 src-tauri/target/
+# ffmpeg/ffprobe sidecars, provisioned by scripts/fetch-ffmpeg.mjs
+src-tauri/binaries/
 src-tauri/gen/
 
 # --- machine-local, never commit -------------------------------------------

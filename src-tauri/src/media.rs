@@ -61,6 +61,14 @@ fn candidates(which: &str, cfg: &Config) -> Vec<String> {
         cfg.ffprobe.clone()
     };
     let mut out: Vec<String> = configured.into_iter().collect();
+    // The copy the installer carries: a sidecar lands beside the app's own
+    // executable (Contents/MacOS on a Mac). It comes before every system
+    // location so a fresh machine needs nothing installed, and an explicit
+    // config.json path still wins for anyone who wants a particular build.
+    if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
+        let sidecar = dir.join(if cfg!(windows) { format!("{which}.exe") } else { which.to_string() });
+        out.push(sidecar.to_string_lossy().to_string());
+    }
     out.extend(
         [
             format!("C:/ProgramData/chocolatey/lib/ffmpeg-full/tools/ffmpeg/bin/{which}.exe"),
