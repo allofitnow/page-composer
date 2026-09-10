@@ -21,6 +21,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const require = createRequire(import.meta.url);
 const args = process.argv.slice(2);
 const explicit = args[args.indexOf('--target') + 1];
+// The CI passes the whole tauri args string, so anything after the triple is not ours.
 const triple =
   (args.includes('--target') && explicit) ||
   execSync('rustc -vV', { encoding: 'utf8' }).match(/host:\s*(\S+)/)?.[1];

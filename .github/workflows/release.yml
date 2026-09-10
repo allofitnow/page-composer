@@ -28,10 +28,11 @@ jobs:
         include:
           - os: windows-latest
             args: ''
+          # Apple Silicon only: GitHub has retired its Intel Mac runners, and
+          # the studio's Macs are all M-series. The app bundle is what the
+          # updater installs; the dmg is for a first install by hand.
           - os: macos-latest
-            args: '--target aarch64-apple-darwin'
-          - os: macos-13
-            args: '--target x86_64-apple-darwin'
+            args: '--target aarch64-apple-darwin --bundles app,dmg'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +44,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ contains(matrix.os, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ contains(matrix.os, 'macos') && 'aarch64-apple-darwin' || '' }}
 
       - uses: swatinem/rust-cache@v2
         with:
