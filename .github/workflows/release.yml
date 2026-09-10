@@ -86,8 +86,11 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          grep -iE 'error|failed|panicked|not found|denied' build.log | grep -viE 'warning|0 errors' | tail -15 | sed 's/^/::error::/' || true
-          tail -30 build.log | sed 's/^/::notice::/'
+          # GitHub keeps ten annotations per level, so only real error lines
+          # (not crate names like thiserror) and a short tail.
+          sed 's/\[[0-9;]*m//g' build.log > plain.log
+          grep -E '(^|[^a-z_-])(error(\[E[0-9]+\])?:|Error:|failed to|panicked at|FAILED)' plain.log | grep -viE 'warning' | tail -8 | sed 's/^/::error::/' || true
+          tail -8 plain.log | sed 's/^/::notice::/'
 
       - uses: tauri-apps/tauri-action@v0
         env:
