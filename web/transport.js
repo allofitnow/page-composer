@@ -122,10 +122,11 @@ export function thumbImg(projectId, rel, width, attrs = {}) {
   );
 
   if (!isTauri) {
-    img.src = `/api/thumb/${projectId}?${q({ rel, w: width, v: attrs['data-mtime'] })}`;
+    img.src = `/api/thumb/${projectId}?${q({ rel, w: width, v: attrs['data-mtime'], t: attrs['data-at'] })}`;
     return img;
   }
-  invoke('thumbnail', { id: projectId, rel, w: width })
+  // `t` is a seek in seconds for a video poster — a trimmed clip shows its in point.
+  invoke('thumbnail', { id: projectId, rel, w: width, t: attrs['data-at'] ? Number(attrs['data-at']) : null })
     .then((path) => {
       img.src = T.core.convertFileSrc(path);
     })

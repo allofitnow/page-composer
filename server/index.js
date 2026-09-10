@@ -101,7 +101,9 @@ app.get('/api/thumb/:id', wrap(async (req, res) => {
       : project.assets.find((a) => a.rel === req.query.rel);
   if (!asset) return res.status(404).end();
   const width = Math.min(Number(req.query.w) || 420, 1800);
-  const file = await thumbnail(resolveRel(decodeId(req.params.id), asset.rel), asset.kind, width);
+  // A poster seek in seconds, for a trimmed clip's in point; 0 means the default.
+  const at = Math.max(0, Number(req.query.t) || 0);
+  const file = await thumbnail(resolveRel(decodeId(req.params.id), asset.rel), asset.kind, width, at);
   res.setHeader('Cache-Control', 'public, max-age=86400');
   // The cache lives in `.cache`, and send() 404s any path with a dot-segment
   // unless dotfiles are allowed explicitly.

@@ -29,12 +29,17 @@ function release() {
   else active--;
 }
 
-const keyFor = (file, mtime, w) => crypto.createHash('sha1').update(`${file}|${mtime}|${w}`).digest('hex') + '.jpg';
+// `at` only matters for a video poster (a seek in seconds); it is part of the
+// key so a trimmed clip's in-point frame and its default frame both cache.
+const keyFor = (file, mtime, w, at = 0) =>
+  crypto.createHash('sha1').update(`${file}|${mtime}|${w}${at > 0 ? `|${at.toFixed(3)}` : ''}`).digest('hex') + '.jpg';
 
-async function build(file, kind, width, out) {
+async function build(file, kind, width, out, at = 0) {
   if (kind === 'video') {
     // `-ss` BEFORE `-i` is an input seek, so this stays cheap on huge masters.
-    const seek = ['-y', '-ss', '1', '-i', file, '-frames:v', '1', '-vf', `scale=${width}:-2`, '-q:v', '4', out];
+    // One second in by default — the first frame of most clips is black or a
+    // slate — or the trimmed in point when there is one.
+    const seek = ['-y', '-ss', at > 0 ? at.toFixed(3) : '1', '-i', file, '-frames:v', '1', '-vf', `scale=${width}:-2`, '-q:v', '4', out];
     const first = ['-y', '-i', file, '-frames:v', '1', '-vf', `scale=${width}:-2`, '-q:v', '4', out];
     await ffmpeg(seek, { timeout: 180_000 }).catch(() =>
       // Clips shorter than the seek point: fall back to the first frame.
@@ -105,16 +110,17 @@ export async function preview(file) {
  * Cached JPEG thumbnail for a still or a video (poster frame at ~1s).
  * Concurrent requests for the same key share one render.
  */
-export async function thumbnail(file, kind, width = 420) {
+export async function thumbnail(file, kind, width = 420, at = 0) {
   const st = fs.statSync(file);
-  const out = path.join(CACHE_DIR, keyFor(file, st.mtimeMs, width));
+  const seek = kind === 'video' ? at : 0;
+  const out = path.join(CACHE_DIR, keyFor(file, st.mtimeMs, width, seek));
   if (fs.existsSync(out)) return out;
   if (inflight.has(out)) return inflight.get(out);
 
   const job = (async () => {
     await acquire();
     try {
-      return await build(file, kind, width, out);
+      return await build(file, kind, width, out, seek);
     } finally {
       release();
     }

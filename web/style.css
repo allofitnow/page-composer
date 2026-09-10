@@ -676,7 +676,7 @@ textarea.field { resize: vertical; line-height: 1.6; }
 /* ----------------------------------------------------------- 05 export */
 .xrow {
   display: grid;
-  grid-template-columns: 34px 1fr 14px 1fr 58px 108px 90px;
+  grid-template-columns: 34px 1fr 14px 1fr 58px 108px 170px 90px;
   gap: 12px; align-items: center;
   padding: 10px 0;
   border-bottom: 1px solid var(--rule);

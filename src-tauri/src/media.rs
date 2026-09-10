@@ -484,7 +484,7 @@ pub async fn cms_thumb(
             // again whether or not the frame comes out.
             let staged = out.with_file_name(format!("{stem}.{nonce}.src"));
             std::fs::write(&staged, &bytes).map_err(|e| e.to_string())?;
-            let made = build(&cfg, &staged, Kind::Video, width, &part);
+            let made = build(&cfg, &staged, Kind::Video, width, &part, 0.0);
             let _ = std::fs::remove_file(&staged);
             made.map_err(|e| {
                 let _ = std::fs::remove_file(&part);
@@ -515,9 +515,12 @@ pub async fn cms_thumb(
     })
 }
 
-fn cache_key(file: &Path, mtime: f64, width: u32) -> String {
+fn cache_key(file: &Path, mtime: f64, width: u32, seek_at: f64) -> String {
     let mut hasher = Sha1::new();
-    hasher.update(format!("{}|{}|{}", file.to_string_lossy(), mtime, width));
+    // The seek is part of the key so a trimmed clip's in-point frame and its
+    // default frame both cache. Mirrors keyFor in server/thumbs.js.
+    let at = if seek_at > 0.0 { format!("|{seek_at:.3}") } else { String::new() };
+    hasher.update(format!("{}|{}|{}{}", file.to_string_lossy(), mtime, width, at));
     format!("{}.jpg", hex::encode(hasher.finalize()))
 }
 
@@ -540,12 +543,16 @@ pub fn resize_within(img: image::DynamicImage, max_width: u32) -> image::Dynamic
     img.resize_exact(max_width, height.max(1), image::imageops::FilterType::Lanczos3)
 }
 
-fn build(cfg: &Config, source: &Path, kind: Kind, width: u32, out: &Path) -> Result<()> {
+/// `seek_at` is the poster frame for a video, in seconds: one second in by
+/// default (the first frame of most clips is black or a slate), or the trimmed
+/// in point when there is one. Ignored for a still.
+fn build(cfg: &Config, source: &Path, kind: Kind, width: u32, out: &Path, seek_at: f64) -> Result<()> {
     if kind == Kind::Video {
         let w = width.to_string();
+        let at = if seek_at > 0.0 { format!("{seek_at:.3}") } else { "1".to_string() };
         // `-ss` BEFORE `-i` is an input seek, so this stays cheap on masters.
         let seek: Vec<std::ffi::OsString> = vec![
-            "-y".into(), "-ss".into(), "1".into(), "-i".into(), source.into(),
+            "-y".into(), "-ss".into(), at.into(), "-i".into(), source.into(),
             "-frames:v".into(), "1".into(), "-vf".into(), format!("scale={w}:-2").into(),
             "-q:v".into(), "4".into(), out.into(),
         ];
@@ -594,8 +601,11 @@ pub async fn thumbnail(
     id: String,
     rel: String,
     w: Option<u32>,
+    t: Option<f64>,
 ) -> Result<String, String> {
     let width = w.unwrap_or(420).min(1800);
+    // A poster seek in seconds, for a trimmed clip's in point; None is the default.
+    let seek_at = t.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(0.0);
     let (cfg, cache_dir) = {
         let guard = state.config.lock().map_err(|e| e.to_string())?;
         (guard.clone(), state.cache_dir.clone())
@@ -634,7 +644,7 @@ pub async fn thumbnail(
         (source, kind, mtime)
     };
 
-    let out = cache_dir.join(cache_key(&source, mtime, width));
+    let out = cache_dir.join(cache_key(&source, mtime, width, if kind == Kind::Video { seek_at } else { 0.0 }));
     if out.exists() {
         serve(&app, &out);
         return Ok(out.to_string_lossy().to_string());
@@ -646,7 +656,7 @@ pub async fn thumbnail(
             serve(&app, &out);
             return Ok(out.to_string_lossy().to_string());
         }
-        build(&cfg, &source, kind, width, &out).map_err(|e| e.to_string())?;
+        build(&cfg, &source, kind, width, &out, seek_at).map_err(|e| e.to_string())?;
         serve(&app, &out);
         Ok(out.to_string_lossy().to_string())
     })

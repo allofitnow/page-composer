@@ -368,8 +368,21 @@ const IC = {
  */
 const thumb = (rel, w = 420, attrs = {}) => {
   const mt = state.project.assets.find((a) => a.rel === rel)?.mtime || 0;
-  return thumbImg(state.project.id, rel, w, { ...attrs, 'data-mtime': Math.round(mt) });
+  // A trimmed clip's poster is its IN point: the tile then shows the frame
+  // the encode will start on, which is the only proof a trim took that does
+  // not mean opening the clip again.
+  const at = state.trims[rel]?.in;
+  return thumbImg(state.project.id, rel, w, { ...attrs, 'data-mtime': Math.round(mt), 'data-at': at > 0 ? at.toFixed(3) : undefined });
 };
+
+/** 'IN → OUT · kept' for a trimmed clip, or '' when the whole clip goes out. */
+function trimLabel(rel) {
+  const t = state.trims[rel];
+  if (!t) return '';
+  const kept = `${(t.out - t.in).toFixed(2)}S`;
+  if (t.inFrame === undefined || !t.fps) return `${t.in.toFixed(2)}S → ${t.out.toFixed(2)}S · ${kept}`;
+  return `${timecode(t.inFrame, t.fps)} → ${timecode(t.outFrame, t.fps)} · ${kept}`;
+}
 
 // ------------------------------------------------------------------ chrome
 const STEPS = [
@@ -1615,6 +1628,11 @@ function mountVideo(rel, src, isProxy) {
     },
   });
   peek.video = video;
+  // The PLAY / PAUSE chip in the bar reads the element's state, so it has to
+  // be repainted whenever that state changes — including a click on the
+  // picture, a key, or autoplay being refused.
+  video.addEventListener('play', paintPeekBar);
+  video.addEventListener('pause', paintPeekBar);
 
   video.addEventListener('error', async () => {
     if (peek?.rel !== rel || isProxy) {
@@ -1760,6 +1778,13 @@ function stepPeek(delta) {
   showPeek(list[(i + delta + list.length) % list.length].rel);
 }
 
+function togglePeekPlay() {
+  const v = peek?.video;
+  if (!v) return;
+  if (v.paused) v.play().catch(() => {});
+  else v.pause();
+}
+
 function paintPeekBar() {
   if (!peek) return;
   const rel = peek.rel;
@@ -1806,6 +1831,13 @@ function paintPeekBar() {
         },
         placed && placed !== 'hero' ? `IN CAROUSEL ${placed} — REMOVE` : 'ADD TO CAROUSEL'
       ),
+      asset.kind === 'video'
+        ? h(
+            'button.chip',
+            { 'aria-pressed': String(Boolean(peek.video && !peek.video.paused)), onClick: togglePeekPlay, title: 'Space, K or P' },
+            peek.video && !peek.video.paused ? 'PAUSE  SPACE' : 'PLAY  SPACE'
+          )
+        : null,
       h('button.chip', { onClick: closePeek }, 'CLOSE  ESC')
     )
   );
@@ -1888,9 +1920,15 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (peek) {
-    if (e.key === 'Escape' || e.key === ' ') {
+    if (e.key === 'Escape') {
       e.preventDefault();
       closePeek();
+    } else if (e.key === ' ') {
+      // Space is the transport on a clip, the way it is in every player and
+      // NLE; on a still there is nothing to play, so it closes as before.
+      e.preventDefault();
+      if (peek.video) togglePeekPlay();
+      else closePeek();
     } else if (e.key === 'ArrowDown' || (e.key === 'ArrowRight' && !peek.timeline)) {
       e.preventDefault();
       stepPeek(1);
@@ -1914,8 +1952,7 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'f') { e.preventDefault(); peek.timeline.fit(); }
       else if (k === 'k' || k === 'p') {
         e.preventDefault();
-        if (peek.video?.paused) peek.video.play().catch(() => {});
-        else peek.video?.pause();
+        togglePeekPlay();
       }
     }
     return;
@@ -2610,7 +2647,7 @@ function railRow(row, rowIndex, nameAt) {
                 return `TRIMMED ${timecode(t.inFrame, t.fps)} → ${timecode(t.outFrame, t.fps)} · ${t.outFrame - t.inFrame + 1} FRAMES`;
               })(),
             },
-            'TRIM'
+            `TRIM ${(state.trims[it.rel].out - state.trims[it.rel].in).toFixed(1)}S`
           ),
         h(
           'button.cell__x',
@@ -3889,6 +3926,7 @@ function screenExport() {
           h('span', {}, 'OUTPUT'),
           h('span', {}, 'TYPE'),
           h('span', {}, 'SIZE'),
+          h('span', {}, 'TRIM'),
           h('span', {}, 'STATUS')
         ),
         steps.map((s) =>
@@ -3901,6 +3939,9 @@ function screenExport() {
             h('span.trunc', {}, s.output),
             h('span.dim', {}, s.kind === 'video' ? 'MP4' : 'WEBP'),
             h('span.dim', {}, s.bytesOut ? `${bytes(s.bytesIn)} → ${bytes(s.bytesOut)}` : bytes(s.bytesIn || 0)),
+            // What the encoder is told, straight from the same trims the plan
+            // sends — so a clip that reads WHOLE here goes out whole.
+            h('span.trunc', { style: { color: trimLabel(s.rel) ? 'var(--cw)' : undefined }, title: trimLabel(s.rel) ? 'Trimmed in Quick Look — the encode starts and stops here' : '' }, s.kind === 'video' ? trimLabel(s.rel) || 'WHOLE' : ''),
             h('span.xstatus', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, s.status === 'done' ? IC.check() : null, s.status.toUpperCase())
           )
         )
